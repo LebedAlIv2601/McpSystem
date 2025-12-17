@@ -1,18 +1,19 @@
-# Weather Forecast MCP Server
+# Task Tracker MCP Server
 
-Local MCP server providing weather forecast data via Open-Meteo API.
+Local MCP server providing task data via Weeek API.
 
 ## Features
 
-- Single tool: `get_weather_forecast`
-- Returns temperature, precipitation, cloud cover, humidity, and wind speed
-- Supports city name or "City, Country" location format
+- Single tool: `get_tasks`
+- Returns task ID, title, and state (Backlog, In progress, Done)
+- No input parameters required
 - Stdio transport for local integration
 
 ## Requirements
 
 - Python 3.14+
 - Dependencies listed in `requirements.txt`
+- Weeek API access token (configured in `weeek_api.py`)
 
 ## Installation
 
@@ -31,52 +32,45 @@ The server runs on stdio transport and communicates via standard input/output.
 
 ## Tool Specification
 
-### `get_weather_forecast`
+### `get_tasks`
 
-**Description:** Get weather forecast for specified location and date range.
+**Description:** Retrieves all tasks from Weeek task tracker.
 
 **Input Parameters:**
-- `location` (string, required): City name or "City, Country" format (e.g., "Moscow" or "Moscow, Russia")
-- `start_date` (string, required): Start date in YYYY-MM-DD format
-- `end_date` (string, required): End date in YYYY-MM-DD format
+- None (empty object)
 
 **Output:**
 ```json
 {
-  "location": "Moscow, Russia",
-  "forecast": [
+  "tasks": [
     {
-      "date": "2025-12-17",
-      "temperature_2m": {
-        "min": -5,
-        "max": 2,
-        "unit": "°C"
-      },
-      "precipitation": {
-        "total": 0.5,
-        "unit": "mm"
-      },
-      "cloud_cover": {
-        "average": 75,
-        "unit": "%"
-      },
-      "relative_humidity_2m": {
-        "average": 85,
-        "unit": "%"
-      },
-      "wind_speed_10m": {
-        "max": 15,
-        "unit": "km/h"
-      }
+      "id": 12345,
+      "title": "Implement authentication",
+      "state": "In progress"
+    },
+    {
+      "id": 12346,
+      "title": "Write documentation",
+      "state": "Backlog"
+    },
+    {
+      "id": 12347,
+      "title": "Deploy to production",
+      "state": "Done"
     }
   ]
 }
 ```
 
+**State Mapping:**
+- `boardColumnId: 1` → "Backlog"
+- `boardColumnId: 2` → "In progress"
+- `boardColumnId: 3` → "Done"
+
 **Error Response:**
 ```json
 {
-  "error": "No data, ask something other"
+  "error": "HTTP 401: Unauthorized - Invalid API token"
 }
 ```
 
@@ -85,8 +79,7 @@ The server runs on stdio transport and communicates via standard input/output.
 ```
 .
 ├── server.py           # Main MCP server
-├── geocoding.py        # Location geocoding module
-├── weather.py          # Weather API module
+├── weeek_api.py        # Weeek task tracker API integration
 ├── requirements.txt    # Python dependencies
 └── README.md          # This file
 ```

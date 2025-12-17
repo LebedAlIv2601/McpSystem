@@ -24,3 +24,7 @@ client/.env
 # OS
 .DS_Store
 Thumbs.db
+
+# Runtime data
+client/tasks_snapshot.json
+client/subscribers.json

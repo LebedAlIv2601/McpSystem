@@ -1,6 +1,7 @@
 """Telegram bot handler."""
 
 import asyncio
+import json
 import logging
 from datetime import datetime
 from typing import Optional
@@ -18,6 +19,7 @@ from config import (
 from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
 from mcp_manager import MCPManager
+from subscribers import SubscriberManager
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,7 @@ class TelegramBot:
         self.mcp_manager = mcp_manager
         self.conversation_manager = ConversationManager()
         self.openrouter_client = OpenRouterClient()
+        self.subscriber_manager = SubscriberManager()
         self.application: Optional[Application] = None
         self.openrouter_tools = []
 
@@ -68,7 +71,95 @@ class TelegramBot:
         user_id = update.effective_user.id
         logger.info(f"User {user_id}: /start command")
 
+        # Track user interaction
+        self.subscriber_manager.track_user_interaction(user_id)
+
         await retry_telegram_call(update.message.reply_text, WELCOME_MESSAGE)
+
+    async def tasks_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /tasks command."""
+        user_id = update.effective_user.id
+        full_message = update.message.text
+
+        logger.info(f"User {user_id}: /tasks command: {full_message}")
+
+        # Track user interaction
+        self.subscriber_manager.track_user_interaction(user_id)
+
+        user_query = full_message.replace("/tasks", "", 1).strip()
+
+        if not user_query:
+            user_query = "Show me all my tasks"
+
+        thinking_msg = None
+
+        try:
+            if self.conversation_manager.check_and_clear_if_full(user_id):
+                logger.info(f"User {user_id}: History cleared (reached limit)")
+                await update.message.reply_text("Conversation history cleared due to message limit.")
+
+            self.conversation_manager.add_message(user_id, "user", user_query)
+
+            thinking_msg = await retry_telegram_call(update.message.reply_text, "Думаю...")
+
+            response_text = await self._process_with_openrouter(user_id, user_query, force_tool_use=True)
+
+            await retry_telegram_call(thinking_msg.delete)
+            thinking_msg = None
+
+            if response_text:
+                mcp_indicator_present = MCP_USED_INDICATOR in response_text
+
+                clean_response = response_text.replace(MCP_USED_INDICATOR, "").strip() if mcp_indicator_present else response_text
+                self.conversation_manager.add_message(user_id, "assistant", clean_response)
+
+                await retry_telegram_call(update.message.reply_text, response_text)
+            else:
+                await retry_telegram_call(update.message.reply_text, ERROR_MESSAGE)
+
+        except Exception as e:
+            logger.error(f"User {user_id}: Error handling /tasks command: {e}", exc_info=True)
+            if thinking_msg:
+                try:
+                    await retry_telegram_call(thinking_msg.delete)
+                except Exception:
+                    pass
+            try:
+                await retry_telegram_call(update.message.reply_text, ERROR_MESSAGE)
+            except Exception:
+                logger.error(f"User {user_id}: Failed to send error message to user")
+
+    async def subscribe_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /subscribe command."""
+        user_id = update.effective_user.id
+        logger.info(f"User {user_id}: /subscribe command")
+
+        # Track user interaction
+        self.subscriber_manager.track_user_interaction(user_id)
+
+        # Add to subscribers
+        self.subscriber_manager.add_subscriber(user_id)
+
+        await retry_telegram_call(
+            update.message.reply_text,
+            "✅ You will now receive task summaries every 2 minutes."
+        )
+
+    async def unsubscribe_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /unsubscribe command."""
+        user_id = update.effective_user.id
+        logger.info(f"User {user_id}: /unsubscribe command")
+
+        # Track user interaction
+        self.subscriber_manager.track_user_interaction(user_id)
+
+        # Remove from subscribers
+        self.subscriber_manager.remove_subscriber(user_id)
+
+        await retry_telegram_call(
+            update.message.reply_text,
+            "🔕 Periodic summaries disabled."
+        )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle user messages."""
@@ -76,6 +167,9 @@ class TelegramBot:
         user_message = update.message.text
 
         logger.info(f"User {user_id}: Received message: {user_message}")
+
+        # Track user interaction
+        self.subscriber_manager.track_user_interaction(user_id)
 
         thinking_msg = None
 
@@ -118,13 +212,14 @@ class TelegramBot:
             except Exception:
                 logger.error(f"User {user_id}: Failed to send error message to user")
 
-    async def _process_with_openrouter(self, user_id: int, user_message: str) -> Optional[str]:
+    async def _process_with_openrouter(self, user_id: int, user_message: str, force_tool_use: bool = False) -> Optional[str]:
         """
         Process message with OpenRouter and MCP tools.
 
         Args:
             user_id: User ID
             user_message: User's message
+            force_tool_use: If True, instructs model to use get_tasks tool
 
         Returns:
             Response text or None if error
@@ -132,25 +227,32 @@ class TelegramBot:
         conversation_history = self.conversation_manager.get_history(user_id)
 
         current_date = datetime.now().strftime("%Y-%m-%d")
-        system_prompt = {
-            "role": "system",
-            "content": f"""Current date: {current_date}. All dates must be calculated relative to this date.
+
+        if force_tool_use:
+            system_prompt = {
+                "role": "system",
+                "content": f"""Current date: {current_date}. All dates must be calculated relative to this date.
 
 IMPORTANT INSTRUCTIONS:
-- You are a weather assistant with access to real-time weather data via the get_weather_forecast tool.
-- ALWAYS use the get_weather_forecast tool when the user asks about weather, temperature, precipitation, or forecast.
-- NEVER make up, guess, or hallucinate weather information.
-- The tool provides accurate, live weather data - you must use it for all weather queries.
-- If the user asks about weather in any location or any date, call the tool immediately.
-- Do not provide weather information from your training data - always use the tool."""
-        }
+- You are a task management assistant with access to the user's tasks via the get_tasks tool.
+- ALWAYS use the get_tasks tool when the user asks about their tasks.
+- The tool provides real-time task data from Weeek task tracker.
+- After retrieving tasks, present them in a clear, organized format.
+- Tasks have three states: Backlog, In progress, and Done.
+- Use the tool immediately to get current task information."""
+            }
+        else:
+            system_prompt = {
+                "role": "system",
+                "content": f"""Current date: {current_date}. All dates must be calculated relative to this date.
+
+You are a helpful assistant with access to task management tools. If the user asks about tasks, use the get_tasks tool to retrieve current task information."""
+            }
+
         messages_with_system = [system_prompt] + conversation_history
 
         mcp_was_used = False
 
-        # Always use tool_choice="auto" to encourage tool usage
-        # The system prompt instructs model to use tools for weather queries
-        # This ensures follow-up questions like "What about Paris?" also use MCP
         tool_choice = "auto" if self.openrouter_tools else None
 
         try:
@@ -173,17 +275,26 @@ IMPORTANT INSTRUCTIONS:
 
                     try:
                         result = await self.mcp_manager.call_tool(tool_name, tool_args)
+                        result_content = result["result"]
+
+                        try:
+                            parsed_result = json.loads(result_content)
+                            if isinstance(parsed_result, dict) and "error" in parsed_result:
+                                logger.error(f"User {user_id}: MCP tool returned error: {parsed_result['error']}")
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+
                         tool_results.append({
                             "role": "tool",
                             "tool_call_id": tool_call["id"],
-                            "content": result["result"]
+                            "content": result_content
                         })
                     except Exception as e:
                         logger.error(f"User {user_id}: Tool execution error: {e}", exc_info=True)
                         tool_results.append({
                             "role": "tool",
                             "tool_call_id": tool_call["id"],
-                            "content": f"Error: {str(e)}"
+                            "content": json.dumps({"error": str(e)})
                         })
 
                 conversation_with_tools = conversation_history.copy()
@@ -213,23 +324,47 @@ IMPORTANT INSTRUCTIONS:
 
     async def run(self) -> None:
         """Run the Telegram bot."""
-        self.application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        from telegram.request import HTTPXRequest
+
+        # Increase timeout for slow connections
+        request = HTTPXRequest(connection_pool_size=8, connect_timeout=30.0, read_timeout=30.0)
+        self.application = Application.builder().token(TELEGRAM_BOT_TOKEN).request(request).build()
 
         self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("tasks", self.tasks_command))
+        self.application.add_handler(CommandHandler("subscribe", self.subscribe_command))
+        self.application.add_handler(CommandHandler("unsubscribe", self.unsubscribe_command))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
         logger.info("Starting Telegram bot")
-        await self.application.initialize()
-        await self.application.start()
-        await self.application.updater.start_polling()
-
-        logger.info("Telegram bot is running")
+        try:
+            await self.application.initialize()
+            await self.application.start()
+            await self.application.updater.start_polling()
+            logger.info("Telegram bot is running")
+        except Exception as e:
+            logger.error(f"Failed to start Telegram bot: {e}")
+            logger.error("Check your internet connection and Telegram API accessibility")
+            raise
 
     async def stop(self) -> None:
         """Stop the Telegram bot."""
         if self.application:
             logger.info("Stopping Telegram bot")
-            await self.application.updater.stop()
-            await self.application.stop()
-            await self.application.shutdown()
+            try:
+                if self.application.updater and self.application.updater.running:
+                    await self.application.updater.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping updater: {e}")
+
+            try:
+                await self.application.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping application: {e}")
+
+            try:
+                await self.application.shutdown()
+            except Exception as e:
+                logger.warning(f"Error shutting down application: {e}")
+
             logger.info("Telegram bot stopped")

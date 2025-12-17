@@ -1,17 +1,19 @@
-# Telegram Weather Bot Client
+# Telegram Task Tracker Bot Client
 
-Telegram bot integrated with OpenRouter AI and MCP weather forecast server.
+Telegram bot integrated with OpenRouter AI and MCP task tracker server.
 
 ## Features
 
-- Telegram bot interface for weather queries
-- OpenRouter AI integration (model: kwaipilot/kat-coder-pro:free)
-- MCP tool usage for weather data retrieval
+- Telegram bot interface for task management queries
+- OpenRouter AI integration (model: nex-agi/deepseek-v3.1-nex-n1:free)
+- MCP tool usage for task data retrieval from Weeek
+- `/tasks` command for task queries
 - "Думаю" (thinking) indicator while processing requests
 - Current date context automatically provided to model
 - Per-user conversation history (max 50 messages)
 - Automatic history clearing on overflow
 - MCP usage indicator in responses
+- Real error messages from Weeek API
 - Console logging for requests/responses
 - Multi-user concurrent support
 - Secure credential storage via environment variables
@@ -29,15 +31,16 @@ MCP Client (mcp_manager.py)
     ↓
 MCP Server Subprocess (../server.py)
     ↓
-Open-Meteo Weather API
+Weeek Task Tracker API
 ```
 
 ## Requirements
 
 - Python 3.14+
-- MCP weather server (in parent directory)
+- MCP task tracker server (in parent directory)
 - Valid Telegram bot token
 - Valid OpenRouter API key
+- Weeek API access token (configured in ../weeek_api.py)
 
 ## Installation
 
@@ -91,9 +94,31 @@ Edit `config.py` to update:
 ## Usage
 
 1. Start bot: Send `/start` command in Telegram
-2. Ask weather questions: "What's the weather in Moscow tomorrow?"
-3. Bot uses MCP server automatically when needed
+2. Query tasks: Use `/tasks` command with your query
+   - `/tasks show me what's in progress`
+   - `/tasks list all my tasks`
+   - `/tasks what tasks are done?`
+3. Bot uses MCP server automatically to fetch tasks
 4. Responses include "✓ MCP was used" indicator when tools are called
+
+## /tasks Command
+
+The `/tasks` command:
+- Accepts a query after the command
+- Does NOT add `/tasks` itself to conversation history
+- Adds only the query text to history
+- Instructs the AI model to use the `get_tasks` tool
+- Displays real error messages from Weeek API if failures occur
+
+Example:
+```
+User: /tasks show me what's in progress
+Bot: Думаю...
+Bot: You have 1 task in progress:
+- Implement authentication (ID: 12345)
+
+✓ MCP was used
+```
 
 ## Conversation History
 
@@ -101,19 +126,22 @@ Edit `config.py` to update:
 - Maximum 50 messages per user
 - History cleared automatically when limit reached
 - Start command message not included in history
+- `/tasks` command itself not included in history (only the query)
 
 ## Logging
 
 Console logging shows:
 - Bot startup/shutdown events
 - User message reception
+- `/tasks` command usage
 - OpenRouter API requests/responses
 - MCP tool calls and results
 - Error details with tracebacks
 
 ## Error Handling
 
-- User sees: "Sorry, something went wrong. Please try again."
+- User sees: Real error messages from Weeek API
+- Example: "HTTP 401: Unauthorized - Invalid API token"
 - Logs contain: Full error details and stack traces
 
 ## Project Structure

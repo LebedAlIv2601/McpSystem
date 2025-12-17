@@ -70,13 +70,15 @@ class OpenRouterClient:
 
         if tools:
             payload["tools"] = tools
-            # Add tool_choice if specified
             if tool_choice:
                 payload["tool_choice"] = tool_choice
                 logger.info(f"Using tool_choice: {tool_choice}")
 
         logger.info(f"OpenRouter request: model={self.model}, messages={len(messages)}, tools={len(tools) if tools else 0}")
         logger.debug(f"OpenRouter payload: {json.dumps(payload, indent=2)}")
+
+        message_roles = [msg.get("role") for msg in messages]
+        logger.info(f"Message roles: {message_roles}")
 
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
@@ -88,32 +90,59 @@ class OpenRouterClient:
                 response.raise_for_status()
                 data = response.json()
 
-                logger.debug(f"OpenRouter response: {json.dumps(data, indent=2)}")
+            logger.debug(f"OpenRouter response: {json.dumps(data, indent=2)}")
 
-                if "choices" not in data or not data["choices"]:
-                    logger.error("Invalid OpenRouter response: no choices")
-                    return None, None
+            if "choices" not in data or not data["choices"]:
+                logger.error("Invalid OpenRouter response: no choices")
+                return None, None
 
-                choice = data["choices"][0]
-                message = choice.get("message", {})
+            choice = data["choices"][0]
+            message = choice.get("message", {})
 
-                response_text = message.get("content")
-                tool_calls = message.get("tool_calls")
+            response_text = message.get("content")
+            tool_calls = message.get("tool_calls")
 
-                if tool_calls:
-                    logger.info(f"OpenRouter returned {len(tool_calls)} tool calls")
-                    parsed_tool_calls = []
-                    for tc in tool_calls:
-                        if tc.get("type") == "function":
-                            func = tc.get("function", {})
-                            parsed_tool_calls.append({
-                                "id": tc.get("id"),
-                                "name": func.get("name"),
-                                "arguments": json.loads(func.get("arguments", "{}"))
-                            })
-                    return response_text, parsed_tool_calls
-                else:
-                    return response_text, None
+            if tool_calls:
+                logger.info(f"OpenRouter returned {len(tool_calls)} tool calls")
+                parsed_tool_calls = []
+                for tc in tool_calls:
+                    if tc.get("type") == "function":
+                        func = tc.get("function", {})
+                        parsed_tool_calls.append({
+                            "id": tc.get("id"),
+                            "name": func.get("name"),
+                            "arguments": json.loads(func.get("arguments", "{}"))
+                        })
+                return response_text, parsed_tool_calls
+            else:
+                return response_text, None
+
+        except httpx.HTTPStatusError as e:
+            error_body = e.response.text
+            error_headers = e.response.headers
+
+            logger.error(f"OpenRouter HTTP error: {e}")
+            logger.error(f"Response body: {error_body}")
+
+            if e.response.status_code == 429:
+                logger.error("=== RATE LIMIT HIT ===")
+                retry_after = error_headers.get("retry-after")
+                rate_limit_limit = error_headers.get("x-ratelimit-limit")
+                rate_limit_remaining = error_headers.get("x-ratelimit-remaining")
+                rate_limit_reset = error_headers.get("x-ratelimit-reset")
+
+                if retry_after:
+                    logger.error(f"Retry after: {retry_after} seconds")
+                if rate_limit_limit:
+                    logger.error(f"Rate limit: {rate_limit_limit} requests")
+                if rate_limit_remaining:
+                    logger.error(f"Remaining requests: {rate_limit_remaining}")
+                if rate_limit_reset:
+                    logger.error(f"Rate limit resets at: {rate_limit_reset}")
+
+                logger.error(f"All headers: {dict(error_headers)}")
+
+            raise
 
         except httpx.HTTPError as e:
             logger.error(f"OpenRouter HTTP error: {e}", exc_info=True)

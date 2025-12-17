@@ -8,6 +8,7 @@ import sys
 from logger import setup_logging
 from mcp_manager import MCPManager
 from bot import TelegramBot
+from scheduler import PeriodicTaskMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ class Application:
     def __init__(self):
         self.mcp_manager: MCPManager = None
         self.bot: TelegramBot = None
+        self.scheduler: PeriodicTaskMonitor = None
         self.shutdown_event = asyncio.Event()
 
     async def startup(self) -> None:
@@ -35,11 +37,20 @@ class Application:
 
         await self.bot.run()
 
+        # Initialize and start scheduler after bot is running
+        logger.info("Initializing periodic task monitor")
+        self.scheduler = PeriodicTaskMonitor(self.bot.application.bot, self.mcp_manager)
+        await self.scheduler.start()
+
         logger.info("Application startup completed")
 
     async def shutdown(self) -> None:
         """Gracefully shutdown all components."""
         logger.info("Application shutdown initiated")
+
+        if self.scheduler:
+            logger.info("Stopping periodic task monitor")
+            await self.scheduler.stop()
 
         if self.bot:
             await self.bot.stop()
@@ -69,7 +80,7 @@ async def main() -> None:
     """Application entry point."""
     setup_logging(level=logging.INFO)
 
-    logger.info("=== Telegram Weather Bot Starting ===")
+    logger.info("=== Telegram Task Tracker Bot Starting ===")
 
     app = Application()
 
@@ -84,7 +95,7 @@ async def main() -> None:
         logger.error(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)
 
-    logger.info("=== Telegram Weather Bot Stopped ===")
+    logger.info("=== Telegram Task Tracker Bot Stopped ===")
 
 
 if __name__ == "__main__":
