@@ -129,6 +129,59 @@ class TelegramBot:
             except Exception:
                 logger.error(f"User {user_id}: Failed to send error message to user")
 
+    async def fact_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /fact command."""
+        user_id = update.effective_user.id
+        full_message = update.message.text
+
+        logger.info(f"User {user_id}: /fact command: {full_message}")
+
+        # Track user interaction
+        self.subscriber_manager.track_user_interaction(user_id)
+
+        user_query = full_message.replace("/fact", "", 1).strip()
+
+        if not user_query:
+            user_query = "Give me a random fact"
+
+        thinking_msg = None
+
+        try:
+            if self.conversation_manager.check_and_clear_if_full(user_id):
+                logger.info(f"User {user_id}: History cleared (reached limit)")
+                await update.message.reply_text("Conversation history cleared due to message limit.")
+
+            self.conversation_manager.add_message(user_id, "user", user_query)
+
+            thinking_msg = await retry_telegram_call(update.message.reply_text, "Думаю...")
+
+            response_text = await self._process_with_openrouter(user_id, user_query, force_fact_use=True)
+
+            await retry_telegram_call(thinking_msg.delete)
+            thinking_msg = None
+
+            if response_text:
+                mcp_indicator_present = MCP_USED_INDICATOR in response_text
+
+                clean_response = response_text.replace(MCP_USED_INDICATOR, "").strip() if mcp_indicator_present else response_text
+                self.conversation_manager.add_message(user_id, "assistant", clean_response)
+
+                await retry_telegram_call(update.message.reply_text, response_text)
+            else:
+                await retry_telegram_call(update.message.reply_text, ERROR_MESSAGE)
+
+        except Exception as e:
+            logger.error(f"User {user_id}: Error handling /fact command: {e}", exc_info=True)
+            if thinking_msg:
+                try:
+                    await retry_telegram_call(thinking_msg.delete)
+                except Exception:
+                    pass
+            try:
+                await retry_telegram_call(update.message.reply_text, ERROR_MESSAGE)
+            except Exception:
+                logger.error(f"User {user_id}: Failed to send error message to user")
+
     async def subscribe_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /subscribe command."""
         user_id = update.effective_user.id
@@ -212,7 +265,7 @@ class TelegramBot:
             except Exception:
                 logger.error(f"User {user_id}: Failed to send error message to user")
 
-    async def _process_with_openrouter(self, user_id: int, user_message: str, force_tool_use: bool = False) -> Optional[str]:
+    async def _process_with_openrouter(self, user_id: int, user_message: str, force_tool_use: bool = False, force_fact_use: bool = False) -> Optional[str]:
         """
         Process message with OpenRouter and MCP tools.
 
@@ -220,6 +273,7 @@ class TelegramBot:
             user_id: User ID
             user_message: User's message
             force_tool_use: If True, instructs model to use get_tasks tool
+            force_fact_use: If True, instructs model to use get_fact tool
 
         Returns:
             Response text or None if error
@@ -241,12 +295,27 @@ IMPORTANT INSTRUCTIONS:
 - Tasks have three states: Backlog, In progress, and Done.
 - Use the tool immediately to get current task information."""
             }
+        elif force_fact_use:
+            system_prompt = {
+                "role": "system",
+                "content": f"""Current date: {current_date}. All dates must be calculated relative to this date.
+
+IMPORTANT INSTRUCTIONS:
+- You are a helpful assistant with access to random facts via the get_fact tool.
+- ALWAYS use the get_fact tool when the user asks for a fact or interesting information.
+- The tool provides random facts from various topics.
+- After retrieving the fact, present it in a friendly, engaging way.
+- Use the tool immediately to get a random fact."""
+            }
         else:
             system_prompt = {
                 "role": "system",
                 "content": f"""Current date: {current_date}. All dates must be calculated relative to this date.
 
-You are a helpful assistant with access to task management tools. If the user asks about tasks, use the get_tasks tool to retrieve current task information."""
+You are a helpful assistant with access to task management and random facts tools.
+- If the user asks about tasks, use the get_tasks tool to retrieve current task information.
+- If the user asks for a fact or interesting information, use the get_fact tool.
+- You can use multiple tools in sequence if needed. For example, if the user asks to check their tasks and give a fact based on a condition, first use get_tasks, evaluate the condition, and then use get_fact if the condition is met."""
             }
 
         messages_with_system = [system_prompt] + conversation_history
@@ -256,14 +325,29 @@ You are a helpful assistant with access to task management tools. If the user as
         tool_choice = "auto" if self.openrouter_tools else None
 
         try:
-            response_text, tool_calls = await self.openrouter_client.chat_completion(
-                messages=messages_with_system,
-                tools=self.openrouter_tools if self.openrouter_tools else None,
-                tool_choice=tool_choice
-            )
+            # Support chained tool calls with iteration limit
+            max_iterations = 5
+            iteration = 0
+            current_messages = messages_with_system
+            response_text = None
 
-            if tool_calls:
-                logger.info(f"User {user_id}: Processing {len(tool_calls)} tool calls")
+            while iteration < max_iterations:
+                iteration += 1
+                logger.info(f"User {user_id}: Tool call iteration {iteration}/{max_iterations}")
+
+                response_text, tool_calls = await self.openrouter_client.chat_completion(
+                    messages=current_messages,
+                    tools=self.openrouter_tools if self.openrouter_tools else None,
+                    tool_choice=tool_choice
+                )
+
+                if not tool_calls:
+                    # No more tool calls, we're done
+                    logger.info(f"User {user_id}: No tool calls in iteration {iteration}, finishing")
+                    break
+
+                # Process tool calls
+                logger.info(f"User {user_id}: Processing {len(tool_calls)} tool calls in iteration {iteration}")
                 mcp_was_used = True
 
                 tool_results = []
@@ -297,21 +381,24 @@ You are a helpful assistant with access to task management tools. If the user as
                             "content": json.dumps({"error": str(e)})
                         })
 
+                # Build conversation with tool results for next iteration
                 conversation_with_tools = conversation_history.copy()
+
+                # Add all previous iterations from current_messages (excluding system prompt)
+                for msg in current_messages[1:]:
+                    if msg["role"] in ["assistant", "tool"]:
+                        conversation_with_tools.append(msg)
+
+                # Add current assistant response with tool calls if present
                 if response_text:
                     conversation_with_tools.append({"role": "assistant", "content": response_text})
 
+                # Add tool results
                 for tr in tool_results:
                     conversation_with_tools.append(tr)
 
-                messages_with_tools_and_system = [system_prompt] + conversation_with_tools
-
-                final_response, _ = await self.openrouter_client.chat_completion(
-                    messages=messages_with_tools_and_system,
-                    tools=None
-                )
-
-                response_text = final_response
+                # Prepare for next iteration
+                current_messages = [system_prompt] + conversation_with_tools
 
             if response_text and mcp_was_used:
                 response_text += MCP_USED_INDICATOR
@@ -332,6 +419,7 @@ You are a helpful assistant with access to task management tools. If the user as
 
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("tasks", self.tasks_command))
+        self.application.add_handler(CommandHandler("fact", self.fact_command))
         self.application.add_handler(CommandHandler("subscribe", self.subscribe_command))
         self.application.add_handler(CommandHandler("unsubscribe", self.unsubscribe_command))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))

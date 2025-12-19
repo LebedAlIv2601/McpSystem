@@ -22,13 +22,15 @@ OPENROUTER_MODEL = "nex-agi/deepseek-v3.1-nex-n1:free"
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-MCP_SERVER_PATH = Path(__file__).parent.parent / "server.py"
+# MCP Server Paths
+MCP_TASKS_SERVER_PATH = Path(__file__).parent.parent / "mcp_tasks" / "server.py"
+MCP_FACTS_SERVER_PATH = Path(__file__).parent.parent / "mcp_facts" / "server.py"
 
 PYTHON_INTERPRETER = Path(__file__).parent.parent / "venv" / "bin" / "python"
 
 MAX_CONVERSATION_HISTORY = 50
 
-WELCOME_MESSAGE = "Hello! Use /tasks command to manage your tasks from Weeek task tracker.\n\nExample:\n/tasks show me what's in progress\n/tasks list all my tasks"
+WELCOME_MESSAGE = "Hello! Use /tasks command to manage your tasks from Weeek task tracker, or /fact to get a random fact.\n\nExamples:\n/tasks show me what's in progress\n/tasks list all my tasks\n/fact\n/fact tell me something interesting"
 
 MCP_USED_INDICATOR = "\n\n✓ MCP was used"
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from client/.env
-env_path = Path(__file__).parent / "client" / ".env"
+env_path = Path(__file__).parent.parent / "client" / ".env"
 load_dotenv(dotenv_path=env_path)
 
 WEEEK_API_BASE_URL = "https://api.weeek.net/public/v1"
