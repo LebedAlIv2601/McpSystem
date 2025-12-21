@@ -22,11 +22,38 @@ OPENROUTER_MODEL = "nex-agi/deepseek-v3.1-nex-n1:free"
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# MCP Server Paths
+# MCP Server Paths (legacy - kept for backward compatibility)
 MCP_TASKS_SERVER_PATH = Path(__file__).parent.parent / "mcp_tasks" / "server.py"
 MCP_FACTS_SERVER_PATH = Path(__file__).parent.parent / "mcp_facts" / "server.py"
 
 PYTHON_INTERPRETER = Path(__file__).parent.parent / "venv" / "bin" / "python"
+
+# MCP Servers Configuration
+# Each server is defined by name, command, and args
+MCP_SERVERS = [
+    {
+        "name": "weeek_tasks",
+        "command": str(PYTHON_INTERPRETER),
+        "args": [str(MCP_TASKS_SERVER_PATH)],
+        "env": None
+    },
+    {
+        "name": "random_facts",
+        "command": str(PYTHON_INTERPRETER),
+        "args": [str(MCP_FACTS_SERVER_PATH)],
+        "env": None
+    },
+    {
+        "name": "mobile_mcp",
+        "command": "npx",
+        "args": ["-y", "@mobilenext/mobile-mcp@latest"],
+        "env": {
+            **os.environ.copy(),  # Inherit all environment variables
+            "NVM_DIR": str(Path.home() / ".nvm"),
+            "PATH": f"{Path.home() / '.nvm/versions/node/v22.21.1/bin'}:{os.getenv('PATH', '')}"
+        }
+    }
+]
 
 MAX_CONVERSATION_HISTORY = 50
 
@@ -39,7 +66,7 @@ ERROR_MESSAGE = "Sorry, something went wrong. Please try again."
 TOOL_CALL_TIMEOUT = 30.0
 
 # Periodic task monitoring configuration
-TASK_FETCH_INTERVAL = 30  # seconds - how often to fetch tasks from MCP
-SUMMARY_INTERVAL = 120  # seconds (2 minutes) - how often to send summaries
+TASK_FETCH_INTERVAL = 300000  # seconds - how often to fetch tasks from MCP
+SUMMARY_INTERVAL = 1200000  # seconds (2 minutes) - how often to send summaries
 TASKS_SNAPSHOT_FILE = "tasks_snapshot.json"
 SUBSCRIBERS_FILE = "subscribers.json"

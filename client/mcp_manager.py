@@ -2,13 +2,13 @@
 
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any
-from contextlib import asynccontextmanager
+from typing import List, Dict, Any
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from config import MCP_TASKS_SERVER_PATH, MCP_FACTS_SERVER_PATH, PYTHON_INTERPRETER, TOOL_CALL_TIMEOUT
+from config import MCP_SERVERS, TOOL_CALL_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -17,96 +17,101 @@ class MCPManager:
     """Manages multiple MCP server subprocesses and client connections."""
 
     def __init__(self):
-        self.tasks_session: Optional[ClientSession] = None
-        self.facts_session: Optional[ClientSession] = None
+        self.sessions: Dict[str, ClientSession] = {}
         self.tools: List[Dict[str, Any]] = []
-        self.tool_server_map: Dict[str, str] = {}  # Maps tool name to server type
+        self.tool_server_map: Dict[str, str] = {}  # Maps tool name to server name
+        self._exit_stack: AsyncExitStack = None
 
     @asynccontextmanager
     async def connect(self):
-        """Connect to both MCP servers and initialize client sessions."""
-        logger.info("Starting both MCP servers simultaneously")
+        """Connect to all configured MCP servers and initialize client sessions."""
+        logger.info(f"Starting {len(MCP_SERVERS)} MCP servers")
 
-        # Server parameters for both servers
-        tasks_server_params = StdioServerParameters(
-            command=str(PYTHON_INTERPRETER),
-            args=[str(MCP_TASKS_SERVER_PATH)],
-            env=None
-        )
+        async with AsyncExitStack() as stack:
+            self._exit_stack = stack
 
-        facts_server_params = StdioServerParameters(
-            command=str(PYTHON_INTERPRETER),
-            args=[str(MCP_FACTS_SERVER_PATH)],
-            env=None
-        )
+            # Connect to all servers
+            for server_config in MCP_SERVERS:
+                server_name = server_config["name"]
+                params = StdioServerParameters(
+                    command=server_config["command"],
+                    args=server_config["args"],
+                    env=server_config.get("env")
+                )
 
-        logger.info(f"Starting tasks server: {PYTHON_INTERPRETER} {MCP_TASKS_SERVER_PATH}")
-        logger.info(f"Starting facts server: {PYTHON_INTERPRETER} {MCP_FACTS_SERVER_PATH}")
+                logger.info(f"Starting {server_name} server: {server_config['command']} {' '.join(server_config['args'])}")
 
-        # Connect to both servers
-        async with stdio_client(tasks_server_params) as (tasks_read, tasks_write):
-            async with stdio_client(facts_server_params) as (facts_read, facts_write):
-                async with ClientSession(tasks_read, tasks_write) as tasks_session:
-                    async with ClientSession(facts_read, facts_write) as facts_session:
-                        self.tasks_session = tasks_session
-                        self.facts_session = facts_session
-                        logger.info("Both MCP clients connected")
+                try:
+                    # Enter stdio_client context
+                    read, write = await stack.enter_async_context(stdio_client(params))
 
-                        await tasks_session.initialize()
-                        logger.info("Tasks MCP session initialized")
+                    # Enter ClientSession context
+                    session = await stack.enter_async_context(ClientSession(read, write))
 
-                        await facts_session.initialize()
-                        logger.info("Facts MCP session initialized")
+                    self.sessions[server_name] = session
+                    logger.info(f"{server_name} MCP client connected")
 
-                        await self._fetch_tools()
+                except Exception as e:
+                    logger.error(f"Failed to connect to {server_name} server: {e}", exc_info=True)
+                    # Continue with other servers even if one fails
 
-                        try:
-                            yield self
-                        finally:
-                            logger.info("Closing both MCP sessions")
-                            self.tasks_session = None
-                            self.facts_session = None
+            # Initialize all connected sessions
+            await self._initialize_sessions()
+
+            try:
+                yield self
+            finally:
+                logger.info("Closing all MCP sessions")
+                self.sessions.clear()
+                self._exit_stack = None
+
+    async def _initialize_sessions(self):
+        """Initialize all connected sessions and fetch tools."""
+        logger.info("Initializing all MCP sessions")
+
+        for server_name, session in self.sessions.items():
+            try:
+                await session.initialize()
+                logger.info(f"{server_name} MCP session initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize {server_name} session: {e}", exc_info=True)
+
+        await self._fetch_tools()
 
     async def _fetch_tools(self) -> None:
-        """Fetch available tools from both MCP servers."""
-        if not self.tasks_session or not self.facts_session:
-            raise RuntimeError("MCP sessions not initialized")
+        """Fetch available tools from all MCP servers."""
+        if not self.sessions:
+            raise RuntimeError("No MCP sessions initialized")
 
-        logger.info("Fetching tools from both MCP servers")
+        logger.info(f"Fetching tools from {len(self.sessions)} MCP servers")
 
-        # Fetch tools from tasks server
-        tasks_result = await self.tasks_session.list_tools()
-        tasks_tools = [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "inputSchema": tool.inputSchema
-            }
-            for tool in tasks_result.tools
-        ]
-        logger.info(f"Fetched {len(tasks_tools)} tools from tasks server: {[t['name'] for t in tasks_tools]}")
+        all_tools = []
 
-        # Fetch tools from facts server
-        facts_result = await self.facts_session.list_tools()
-        facts_tools = [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "inputSchema": tool.inputSchema
-            }
-            for tool in facts_result.tools
-        ]
-        logger.info(f"Fetched {len(facts_tools)} tools from facts server: {[t['name'] for t in facts_tools]}")
+        for server_name, session in self.sessions.items():
+            try:
+                result = await session.list_tools()
+                server_tools = [
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "inputSchema": tool.inputSchema
+                    }
+                    for tool in result.tools
+                ]
+                logger.info(f"Fetched {len(server_tools)} tools from {server_name} server: {[t['name'] for t in server_tools]}")
 
-        # Merge tools from both servers
-        self.tools = tasks_tools + facts_tools
+                # Add to merged tool list
+                all_tools.extend(server_tools)
 
-        # Build tool-to-server mapping for routing
-        for tool in tasks_tools:
-            self.tool_server_map[tool["name"]] = "tasks"
-        for tool in facts_tools:
-            self.tool_server_map[tool["name"]] = "facts"
+                # Build tool-to-server mapping for routing
+                for tool in server_tools:
+                    self.tool_server_map[tool["name"]] = server_name
 
+            except Exception as e:
+                logger.error(f"Failed to fetch tools from {server_name} server: {e}", exc_info=True)
+                # Continue with other servers even if one fails
+
+        self.tools = all_tools
         logger.info(f"Total tools available: {len(self.tools)}")
         logger.info(f"Tool routing map: {self.tool_server_map}")
 
@@ -125,18 +130,20 @@ class MCPManager:
         Returns:
             Tool execution result
         """
-        if not self.tasks_session or not self.facts_session:
+        if not self.sessions:
             raise RuntimeError("MCP sessions not initialized")
 
         # Determine which server to route to
-        server_type = self.tool_server_map.get(tool_name)
-        if not server_type:
+        server_name = self.tool_server_map.get(tool_name)
+        if not server_name:
             raise RuntimeError(f"Unknown tool: {tool_name}")
 
-        session = self.tasks_session if server_type == "tasks" else self.facts_session
+        session = self.sessions.get(server_name)
+        if not session:
+            raise RuntimeError(f"Server {server_name} not available")
 
         logger.info(f"=== MCP SERVER CALL ===")
-        logger.info(f"Server: {server_type}")
+        logger.info(f"Server: {server_name}")
         logger.info(f"Tool: {tool_name}")
         logger.info(f"Arguments: {arguments}")
 
@@ -153,26 +160,26 @@ class MCPManager:
                         content_text += item.text
 
                 logger.info(f"=== MCP SERVER RESPONSE ===")
-                logger.info(f"Server: {server_type}")
+                logger.info(f"Server: {server_name}")
                 logger.info(f"Response: {content_text}")
 
                 return {"result": content_text}
             else:
                 logger.info(f"=== MCP SERVER RESPONSE ===")
-                logger.info(f"Server: {server_type}")
+                logger.info(f"Server: {server_name}")
                 logger.info(f"Response: No result")
                 return {"result": "No result"}
 
         except asyncio.TimeoutError:
             logger.error(f"=== MCP SERVER ERROR ===")
-            logger.error(f"Server: {server_type}")
+            logger.error(f"Server: {server_name}")
             logger.error(f"MCP tool call timeout: {tool_name}")
             import sys
             sys.stdout.flush()
             raise
         except Exception as e:
             logger.error(f"=== MCP SERVER ERROR ===")
-            logger.error(f"Server: {server_type}")
+            logger.error(f"Server: {server_name}")
             logger.error(f"MCP tool call error: {e}", exc_info=True)
             import sys
             sys.stdout.flush()

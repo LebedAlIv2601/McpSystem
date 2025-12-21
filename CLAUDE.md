@@ -1,12 +1,15 @@
-# Task Tracker MCP System
+# Multi-MCP Telegram Bot System
 
-Complete system for task management via Telegram bot using MCP (Model Context Protocol) server and OpenRouter AI.
+Complete system for task management and mobile automation via Telegram bot using multiple MCP (Model Context Protocol) servers and OpenRouter AI.
 
 ## Project Overview
 
 This project consists of two main components:
-1. **MCP Server** - Local task tracker server providing task data via Weeek API
-2. **Telegram Bot Client** - AI-powered bot using OpenRouter that connects to MCP server
+1. **Multiple MCP Servers** - Three specialized MCP servers providing different capabilities:
+   - Weeek task tracker integration
+   - Random facts generator
+   - Mobile device automation (Android/iOS)
+2. **Telegram Bot Client** - AI-powered bot using OpenRouter that connects to all MCP servers simultaneously
 
 ## Architecture
 
@@ -17,59 +20,69 @@ This project consists of two main components:
 └──────┬──────┘
        │
        ↓
-┌─────────────────────────────────┐
-│ Telegram Bot (client/bot.py)   │
-│ - Handles user messages         │
-│ - Handles /tasks command        │
-│ - Handles /subscribe command    │
-│ - Manages conversation history  │
-│ - Shows "Думаю..." indicator    │
-└──────┬──────────────────────────┘
+┌─────────────────────────────────────────┐
+│ Telegram Bot (client/bot.py)           │
+│ - Handles user messages                 │
+│ - Handles /tasks, /fact commands        │
+│ - Handles /subscribe command            │
+│ - Manages conversation history          │
+│ - Shows "Думаю..." indicator            │
+└──────┬──────────────────────────────────┘
        │
        ↓
-┌─────────────────────────────────┐
-│ OpenRouter API                  │
-│ Model: nex-agi/deepseek-v3.1    │
-│ - Processes natural language    │
-│ - Decides when to use tools     │
-└──────┬──────────────────────────┘
+┌─────────────────────────────────────────┐
+│ OpenRouter API                          │
+│ Model: nex-agi/deepseek-v3.1            │
+│ - Processes natural language            │
+│ - Decides when to use tools (21 total)  │
+└──────┬──────────────────────────────────┘
        │ (when tool needed)
        ↓
-┌─────────────────────────────────┐
-│ MCP Client (mcp_manager.py)     │◄──────────┐
-│ - Manages server subprocess     │           │
-│ - Executes tool calls           │           │
-└──────┬──────────────────────────┘           │
-       │                                       │
-       ↓                                       │
-┌─────────────────────────────────┐           │
-│ MCP Server (server.py)          │           │
-│ - Task retrieval integration    │           │
-└──────┬──────────────────────────┘           │
-       │                                       │
-       ↓                                       │
-┌─────────────────────────────────┐           │
-│ Weeek API                       │           │
-│ - Task Tracker API              │           │
-└─────────────────────────────────┘           │
-                                               │
-┌──────────────────────────────────────────────┘
-│
-│ Parallel Background Process:
-│
-│ ┌────────────────────────────────────┐
-│ │ Scheduler (client/scheduler.py)    │
-│ │ - Fetches tasks every 30 seconds   │
-│ │ - Sends summaries every 2 minutes  │
-│ │ - Manages subscriptions            │
-│ └────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ MCP Manager (mcp_manager.py)            │
+│ - Manages 3 server subprocesses         │
+│ - Routes tool calls to correct server   │
+│ - Merges tools from all servers         │
+└──────┬──────────────────────────────────┘
+       │
+       ├──────────────────┬───────────────────────┐
+       ↓                  ↓                       ↓
+┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
+│ Weeek Tasks  │  │ Random Facts │  │ Mobile MCP           │
+│ MCP Server   │  │ MCP Server   │  │ (Node.js/npx)        │
+│ (Python)     │  │ (Python)     │  │ @mobilenext/         │
+│              │  │              │  │ mobile-mcp           │
+│ Tool:        │  │ Tool:        │  │                      │
+│ - get_tasks  │  │ - get_fact   │  │ Tools (19):          │
+└──────┬───────┘  └──────────────┘  │ - list_devices       │
+       │                             │ - launch_app         │
+       ↓                             │ - screenshot         │
+┌──────────────┐                     │ - tap/swipe/type     │
+│ Weeek API    │                     │ - press_button       │
+│              │                     │ - etc.               │
+└──────────────┘                     └──────────────────────┘
+
+┌──────────────────────────────────────────┐
+│ Parallel Background Process:             │
+│                                           │
+│ ┌────────────────────────────────────┐   │
+│ │ Scheduler (client/scheduler.py)    │   │
+│ │ - Fetches tasks every 30 seconds   │   │
+│ │ - Sends summaries every 2 minutes  │   │
+│ │ - Manages subscriptions            │   │
+│ └────────────────────────────────────┘   │
+└──────────────────────────────────────────┘
 ```
 
 ## System Components
 
-### 1. MCP Server (Root Directory)
+### 1. MCP Servers
 
-**Purpose:** Provide task data via MCP protocol
+The system integrates three specialized MCP servers that run simultaneously:
+
+#### 1.1 Weeek Tasks MCP Server (mcp_tasks/)
+
+**Purpose:** Provide task data from Weeek task tracker via MCP protocol
 
 **Files:**
 - `server.py` - Main MCP server with stdio transport
@@ -112,9 +125,61 @@ This project consists of two main components:
 - `boardColumnId: 2` → "In progress"
 - `boardColumnId: 3` → "Done"
 
+#### 1.2 Random Facts MCP Server (mcp_facts/)
+
+**Purpose:** Provide random interesting facts via MCP protocol
+
+**Files:**
+- `server.py` - Main MCP server with stdio transport
+- `requirements.txt` - Server dependencies
+
+**Tool Provided:**
+- `get_fact` - Returns a random fact
+
+#### 1.3 Mobile Automation MCP Server (External NPM Package)
+
+**Purpose:** Provide mobile device automation capabilities for Android and iOS
+
+**Package:** `@mobilenext/mobile-mcp@latest` (installed via npx)
+
+**Repository:** https://github.com/mobile-next/mobile-mcp
+
+**Prerequisites:**
+- Node.js v22+
+- Android Platform Tools (adb) for Android automation
+- Xcode Command Line Tools for iOS automation (optional)
+
+**Tools Provided (19 total):**
+- `mobile_list_available_devices` - List connected devices/emulators
+- `mobile_list_apps` - List installed applications
+- `mobile_launch_app` - Launch application by package/bundle ID
+- `mobile_terminate_app` - Terminate running application
+- `mobile_install_app` - Install application from APK/IPA
+- `mobile_uninstall_app` - Uninstall application
+- `mobile_get_screen_size` - Get device screen dimensions
+- `mobile_click_on_screen_at_coordinates` - Tap at specific coordinates
+- `mobile_double_tap_on_screen` - Double tap at coordinates
+- `mobile_long_press_on_screen_at_coordinates` - Long press at coordinates
+- `mobile_list_elements_on_screen` - List UI elements with coordinates
+- `mobile_press_button` - Press hardware buttons (HOME, BACK, VOLUME, etc.)
+- `mobile_open_url` - Open URL in browser
+- `mobile_swipe_on_screen` - Swipe gesture
+- `mobile_type_keys` - Type text input
+- `mobile_save_screenshot` - Save screenshot to file
+- `mobile_take_screenshot` - Take screenshot and return base64
+- `mobile_set_orientation` - Set screen orientation (portrait/landscape)
+- `mobile_get_orientation` - Get current screen orientation
+
+**Capabilities:**
+- Cross-platform automation (Android & iOS)
+- Accessibility-first approach using native view hierarchies
+- Screenshot-based automation fallback
+- Real device and emulator/simulator support
+- Deterministic tool application for reliable automation
+
 ### 2. Telegram Bot Client (client/ Directory)
 
-**Purpose:** Provide conversational interface for task management queries
+**Purpose:** Provide conversational interface for task management, information, and mobile automation
 
 **Files:**
 - `main.py` - Application entry point and lifecycle management
@@ -133,11 +198,14 @@ This project consists of two main components:
 
 **Features:**
 - Per-user isolated conversation history (max 50 messages)
+- **Up to 15 chained tool calls per conversation** - Increased from 5 for complex multi-step operations
 - "Думаю..." thinking indicator while processing
 - `/tasks` command for task queries
+- `/fact` command for random facts
 - **Periodic task monitoring** - Background monitoring every 30 seconds
 - **AI-generated automatic summaries** - Natural language summaries delivered every 2 minutes
 - **Subscription management** - Users can opt-in/opt-out of periodic summaries
+- **Mobile automation support** - 19 tools for Android/iOS device control
 - Current date automatically provided to model
 - MCP usage indicator ("✓ MCP was used")
 - Automatic history clearing on overflow
@@ -149,9 +217,11 @@ This project consists of two main components:
 
 ### Prerequisites
 - Python 3.14+
+- Node.js v22+ (for mobile-mcp server)
+- Android Platform Tools (adb) for mobile automation
 - Telegram bot token (from @BotFather)
 - OpenRouter API key (from openrouter.ai)
-- Weeek API access token (configured in weeek_api.py)
+- Weeek API access token (configured in mcp_tasks/weeek_api.py)
 
 ### Setup Steps
 
@@ -160,23 +230,43 @@ This project consists of two main components:
 cd /path/to/McpSystem
 ```
 
-2. **Create and activate virtual environment:**
+2. **Install Node.js v22+ (if not installed):**
+```bash
+# Using nvm (recommended)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+source ~/.zshrc  # or ~/.bashrc
+nvm install 22
+nvm use 22
+
+# Verify installation
+node --version  # Should show v22.x.x
+```
+
+3. **Verify Android Platform Tools (for mobile automation):**
+```bash
+adb --version  # Should show adb version
+```
+
+4. **Create and activate virtual environment:**
 ```bash
 python3.14 -m venv venv
 source venv/bin/activate  # On macOS/Linux
 ```
 
-3. **Install server dependencies:**
+5. **Install MCP server dependencies:**
 ```bash
+# Install dependencies for Python MCP servers
 pip install -r requirements.txt
+
+# mobile-mcp will be automatically installed via npx on first run
 ```
 
-4. **Install client dependencies:**
+6. **Install client dependencies:**
 ```bash
 pip install -r client/requirements.txt
 ```
 
-5. **Configure environment variables:**
+7. **Configure environment variables:**
 ```bash
 cd client
 cp .env.example .env
@@ -187,7 +277,7 @@ cp .env.example .env
 
 ## Running the System
 
-### Start Telegram Bot (Automatically Starts MCP Server)
+### Start Telegram Bot (Automatically Starts All MCP Servers)
 
 ```bash
 cd client
@@ -195,20 +285,36 @@ cd client
 ```
 
 The bot will:
-1. Start MCP server as subprocess
-2. Connect MCP client via stdio
-3. Fetch available tools from server
+1. Start all 3 MCP servers as subprocesses:
+   - Weeek Tasks MCP (Python)
+   - Random Facts MCP (Python)
+   - Mobile MCP (Node.js via npx)
+2. Connect MCP client to all servers via stdio
+3. Fetch available tools from all servers (21 total tools)
 4. Start Telegram bot polling
 5. Start periodic task monitor (30s fetching, 2min summaries)
 6. Begin accepting user messages
 
-### Test MCP Server Standalone (Optional)
+**Note:** First run may take 30-40 seconds while mobile-mcp downloads and initializes.
 
+### Test MCP Servers Standalone (Optional)
+
+**Weeek Tasks Server:**
 ```bash
-python server.py
+python mcp_tasks/server.py
 ```
 
-Server communicates via stdio (standard input/output).
+**Random Facts Server:**
+```bash
+python mcp_facts/server.py
+```
+
+**Mobile MCP Server:**
+```bash
+npx -y @mobilenext/mobile-mcp@latest
+```
+
+All servers communicate via stdio (standard input/output).
 
 ## Usage
 
@@ -288,6 +394,45 @@ The `/tasks` command:
   • Implement authentication (ID: 12345): In progress → Done
 
 No title or deletion changes detected.
+
+---
+
+**User:** List available Android devices
+
+**Bot:** Думаю...
+
+**Bot:** Here are the available Android devices:
+
+1. emulator-5554 (Android SDK built for x86_64)
+   - Status: Online
+   - Android Version: 13
+
+✓ MCP was used
+
+---
+
+**User:** Take a screenshot of the device and show me what's on screen
+
+**Bot:** Думаю...
+
+**Bot:** I've taken a screenshot of the device. The screen shows:
+- System UI with status bar at the top
+- Home screen with app launcher icons
+- Navigation bar at the bottom
+
+Screenshot saved.
+
+✓ MCP was used
+
+---
+
+**User:** Open Chrome on the device and navigate to google.com
+
+**Bot:** Думаю...
+
+**Bot:** I've launched Chrome browser and navigated to google.com. The page loaded successfully.
+
+✓ MCP was used
 
 ## Periodic Task Monitoring
 
@@ -424,15 +569,53 @@ Required in `client/.env`:
 
 ## Technology Stack
 
-### Server
-- **MCP SDK** - Model Context Protocol implementation
+### MCP Servers
+- **MCP SDK (Python)** - Model Context Protocol implementation for Python servers
 - **httpx** - Async HTTP client for Weeek API
+- **@mobilenext/mobile-mcp** - Node.js-based mobile automation MCP server
 
 ### Client
 - **python-telegram-bot** - Telegram bot framework
-- **MCP SDK** - MCP client implementation
+- **MCP SDK (Python)** - MCP client implementation
 - **httpx** - OpenRouter API client
 - **python-dotenv** - Environment variable management
+
+### External Tools
+- **Node.js v22+** - Runtime for mobile-mcp server
+- **npx** - Package runner for @mobilenext/mobile-mcp
+- **Android Platform Tools (adb)** - Android device communication
+
+## Technical Implementation Notes
+
+### Multi-MCP Connection Management
+
+The system uses `AsyncExitStack` from Python's `contextlib` to manage multiple MCP server connections simultaneously. This approach ensures:
+
+1. **Stable Connections**: All server contexts remain active throughout the bot's lifetime
+2. **Clean Lifecycle**: Automatic cleanup when the manager exits
+3. **Error Resilience**: Individual server failures don't crash the entire system
+4. **Scalability**: Easy to add/remove MCP servers via configuration
+
+**Key implementation (client/mcp_manager.py:25-66):**
+```python
+async with AsyncExitStack() as stack:
+    for server_config in MCP_SERVERS:
+        # Enter stdio_client context
+        read, write = await stack.enter_async_context(stdio_client(params))
+        # Enter ClientSession context
+        session = await stack.enter_async_context(ClientSession(read, write))
+        self.sessions[server_name] = session
+```
+
+This replaces the previous recursive context manager approach that caused premature connection closures.
+
+### Tool Call Iteration Management
+
+The bot supports up to **15 chained tool calls** per user message (configurable in `client/bot.py:329`). This enables complex multi-step operations like:
+- List devices → Launch app → Take screenshot → Analyze UI
+- Get tasks → Filter by state → Generate summary → Send notification
+
+The iteration limit prevents infinite loops while allowing sophisticated automation workflows.
 
 ## Conversation Flow
 
@@ -527,13 +710,26 @@ Graceful shutdown on Ctrl+C:
 - Check token has not expired
 - Ensure token has proper permissions in Weeek workspace
 
+### Mobile MCP errors
+- Verify Node.js v22+ is installed: `node --version`
+- Ensure adb is accessible: `adb --version`
+- Check Android device/emulator is connected: `adb devices`
+- First run may take 30-40 seconds while downloading mobile-mcp package
+- Mobile-mcp logs appear in stderr during startup
+- If mobile tools not available, check MCP manager logs for initialization errors
+
 ## Project Statistics
 
-- **Languages:** Python 3.14
-- **Total Files:** 11 Python modules
-- **MCP Tools:** 1 (get_tasks)
+- **Languages:** Python 3.14, Node.js v22+
+- **Total Files:** 13+ modules (11 Python, mobile-mcp via npm)
+- **MCP Servers:** 3 (Weeek Tasks, Random Facts, Mobile Automation)
+- **MCP Tools:** 21 total
+  - 1 task management tool (get_tasks)
+  - 1 information tool (get_fact)
+  - 19 mobile automation tools (mobile_*)
 - **API Integrations:** 3 (Telegram, OpenRouter, Weeek)
 - **Transport:** stdio (MCP), HTTPS (APIs)
+- **Supported Platforms:** Android (via adb), iOS (via Xcode - optional)
 
 ## Future Enhancements
 
@@ -559,3 +755,4 @@ This project demonstrates MCP integration with AI-powered conversational interfa
 - Anthropic for MCP protocol specification
 - OpenRouter for AI model access
 - Python-telegram-bot for Telegram integration
+- mobile-next/mobile-mcp for mobile automation capabilities (https://github.com/mobile-next/mobile-mcp)

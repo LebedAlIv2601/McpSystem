@@ -326,7 +326,7 @@ You are a helpful assistant with access to task management and random facts tool
 
         try:
             # Support chained tool calls with iteration limit
-            max_iterations = 5
+            max_iterations = 15
             iteration = 0
             current_messages = messages_with_system
             response_text = None
