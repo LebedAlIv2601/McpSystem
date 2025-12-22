@@ -202,10 +202,12 @@ The system integrates three specialized MCP servers that run simultaneously:
 - "Думаю..." thinking indicator while processing
 - `/tasks` command for task queries
 - `/fact` command for random facts
+- `/docs_embed` command for document embeddings generation
 - **Periodic task monitoring** - Background monitoring every 30 seconds
 - **AI-generated automatic summaries** - Natural language summaries delivered every 2 minutes
 - **Subscription management** - Users can opt-in/opt-out of periodic summaries
 - **Mobile automation support** - 19 tools for Android/iOS device control
+- **Embeddings generation** - Create vector embeddings from markdown documents using Ollama
 - Current date automatically provided to model
 - MCP usage indicator ("✓ MCP was used")
 - Automatic history clearing on overflow
@@ -222,6 +224,7 @@ The system integrates three specialized MCP servers that run simultaneously:
 - Telegram bot token (from @BotFather)
 - OpenRouter API key (from openrouter.ai)
 - Weeek API access token (configured in mcp_tasks/weeek_api.py)
+- **Ollama with nomic-embed-text model** (optional, for `/docs_embed` command)
 
 ### Setup Steps
 
@@ -324,6 +327,7 @@ All servers communicate via stdio (standard input/output).
 - `/tasks [query]` - Retrieve and query tasks from Weeek task tracker
 - `/subscribe` - Enable periodic task summaries every 2 minutes
 - `/unsubscribe` - Disable periodic task summaries
+- `/docs_embed` - Generate embeddings for all markdown files in docs/ folder
 
 ### Command Behavior
 
@@ -497,6 +501,112 @@ The AI adapts the summary style based on the changes, providing context and insi
 - **Silent failures** - MCP errors logged but users not notified
 - **Fresh start on restart** - No state loaded from previous run
 - **Per-user opt-in** - Users control their own subscriptions
+
+## Embeddings Generation
+
+The bot includes a document embeddings generation feature that processes markdown files from the `docs/` folder using local Ollama AI.
+
+### Prerequisites
+
+- **Ollama** must be installed and running on `http://localhost:11434`
+- **nomic-embed-text model** must be available in Ollama
+
+To install Ollama and the model:
+```bash
+# Install Ollama (macOS/Linux)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull the nomic-embed-text model
+ollama pull nomic-embed-text
+
+# Verify Ollama is running
+curl http://localhost:11434/api/tags
+```
+
+### How It Works
+
+1. **User triggers command** - User sends `/docs_embed` to bot
+2. **Thinking indicator** - Bot displays "Думаю..." message
+3. **Document processing**:
+   - Reads all `.md` files from top-level `docs/` directory (no subdirectories)
+   - Chunks each file by paragraphs (split by double newlines `\n\n`)
+   - Logs chunk processing: `"Processing {filename}: {chunk_count} chunks"`
+   - For each chunk, logs: `"Chunk {index}/{total}: {first_50_chars}..."`
+4. **Embedding generation**:
+   - Sends each chunk to Ollama API at `http://localhost:11434/api/embeddings`
+   - Uses `nomic-embed-text` model (768-dimensional embeddings)
+   - Receives embedding vector for each chunk
+5. **JSON creation**:
+   - Creates JSON file with timestamp: `embeddings_YYYY-MM-DD_HH-MM-SS.json`
+   - Structure: `[{"text": "chunk content", "embedding": [0.123, ...]}, ...]`
+6. **File delivery**:
+   - Deletes "Думаю..." thinking indicator
+   - Sends JSON file to user via Telegram
+   - Cleans up temporary file after sending
+
+### Output Format
+
+The generated JSON file contains an array of objects, each with:
+- `text` (string) - The chunk text content
+- `embedding` (array of floats) - 768-dimensional embedding vector
+
+**Example structure:**
+```json
+[
+  {
+    "text": "This is the first paragraph from the markdown file.\n\nIt contains some information.",
+    "embedding": [0.123, -0.456, 0.789, ...]
+  },
+  {
+    "text": "This is the second paragraph.\n\nIt contains different information.",
+    "embedding": [0.234, -0.567, 0.890, ...]
+  }
+]
+```
+
+### Error Handling
+
+The `/docs_embed` command handles errors gracefully:
+
+1. **Ollama not available**:
+   - Deletes thinking indicator
+   - Sends: `"❌ Failed to connect to Ollama at http://localhost:11434. Please ensure Ollama is running with the nomic-embed-text model."`
+
+2. **No markdown files found**:
+   - Deletes thinking indicator
+   - Sends: `"❌ No markdown files found in docs/ directory."`
+
+3. **Other errors**:
+   - Deletes thinking indicator
+   - Sends: `"❌ Error generating embeddings: {error_message}"`
+   - Logs full traceback for debugging
+
+### Logging
+
+The embeddings module logs:
+- **INFO**: File discovery, chunk counts, processing summary
+- **DEBUG**: Individual chunk processing (first 50 characters only)
+- **ERROR**: API failures, file errors, exceptions
+
+**Example log output:**
+```
+2025-12-22 15:30:45 - INFO - Found 2 markdown files in docs/
+2025-12-22 15:30:45 - INFO - Processing history1.md: 5 chunks
+2025-12-22 15:30:45 - DEBUG - Chunk 1/5: This is the first paragraph from the markdo...
+2025-12-22 15:30:46 - DEBUG - Chunk 2/5: This is the second paragraph. It contains...
+2025-12-22 15:30:50 - INFO - Processing history2.md: 3 chunks
+2025-12-22 15:30:52 - INFO - Successfully generated 8 embeddings
+2025-12-22 15:30:52 - INFO - Saved embeddings to /path/to/embeddings_2025-12-22_15-30-52.json
+```
+
+### Use Cases
+
+Generated embeddings can be used for:
+- **Semantic search** - Find relevant documents by meaning, not just keywords
+- **Document similarity** - Compare documents by content similarity
+- **RAG systems** - Retrieval-Augmented Generation for AI chatbots
+- **Clustering** - Group similar documents together
+- **Question answering** - Build knowledge bases for question-answering systems
 
 ## Configuration
 

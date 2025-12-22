@@ -35,6 +35,12 @@ This system integrates three specialized MCP servers with a Telegram bot powered
 ### 🎲 Random Facts (facts-mcp)
 - On-demand interesting facts via `/fact` command
 
+### 📄 Document Embeddings (Ollama)
+- Generate vector embeddings from markdown files
+- Uses local Ollama with nomic-embed-text model (768 dimensions)
+- Paragraph-based chunking for optimal embedding quality
+- JSON output with timestamps for easy integration
+
 ## Architecture
 
 ```
@@ -56,6 +62,7 @@ MCP Manager (AsyncExitStack)
 - **Telegram Bot Token** (from @BotFather)
 - **OpenRouter API Key** (from openrouter.ai)
 - **Weeek API Token** (configured in mcp_tasks/weeek_api.py)
+- **Ollama with nomic-embed-text** (optional, for `/docs_embed` command)
 
 ## Installation
 
@@ -96,6 +103,18 @@ cp .env.example .env
 # OPENROUTER_API_KEY=your_key_here
 ```
 
+### 6. Install Ollama (Optional - for /docs_embed)
+```bash
+# Install Ollama (macOS/Linux)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull the nomic-embed-text model
+ollama pull nomic-embed-text
+
+# Verify Ollama is running
+curl http://localhost:11434/api/tags
+```
+
 ## Running the System
 
 ### Start All MCP Servers + Bot
@@ -124,6 +143,7 @@ npx -y @mobilenext/mobile-mcp@latest
 - `/start` - Welcome message
 - `/tasks [query]` - Query Weeek tasks
 - `/fact` - Get random fact
+- `/docs_embed` - Generate embeddings from docs/ markdown files
 - `/subscribe` - Enable periodic task summaries
 - `/unsubscribe` - Disable summaries
 
@@ -174,6 +194,7 @@ McpSystem/
 │   ├── mcp_manager.py     # Multi-MCP connection manager
 │   ├── openrouter_client.py
 │   ├── scheduler.py       # Periodic task monitoring
+│   ├── embeddings.py      # Document embeddings with Ollama
 │   ├── config.py          # Configuration
 │   └── .env               # Credentials (not in git)
 ├── CLAUDE.md              # Detailed documentation
@@ -221,6 +242,14 @@ pkill -9 -f "Python main.py"
 - **Android Platform Tools (adb)** - Device communication
 
 ## Recent Updates
+
+### v2.1 - Document Embeddings Feature
+- ✅ Added `/docs_embed` command for generating vector embeddings
+- ✅ Integrated Ollama with nomic-embed-text model (768 dimensions)
+- ✅ Paragraph-based chunking for optimal embedding quality
+- ✅ JSON output with timestamps for easy integration
+- ✅ Comprehensive error handling and logging
+- ✅ Updated welcome message and documentation
 
 ### v2.0 - Mobile Automation Integration
 - ✅ Added mobile-mcp server (19 Android/iOS automation tools)

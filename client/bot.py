@@ -14,12 +14,16 @@ from config import (
     TELEGRAM_BOT_TOKEN,
     WELCOME_MESSAGE,
     ERROR_MESSAGE,
-    MCP_USED_INDICATOR
+    MCP_USED_INDICATOR,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+    DOCS_FOLDER
 )
 from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
 from mcp_manager import MCPManager
 from subscribers import SubscriberManager
+from embeddings import process_docs_folder, save_embeddings_json, OllamaError
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +217,79 @@ class TelegramBot:
             update.message.reply_text,
             "🔕 Periodic summaries disabled."
         )
+
+    async def docs_embed_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /docs_embed command."""
+        user_id = update.effective_user.id
+        logger.info(f"User {user_id}: /docs_embed command")
+
+        # Track user interaction
+        self.subscriber_manager.track_user_interaction(user_id)
+
+        thinking_msg = None
+
+        try:
+            # Send thinking indicator
+            thinking_msg = await retry_telegram_call(update.message.reply_text, "Думаю...")
+
+            # Process docs folder and generate embeddings
+            embeddings = await process_docs_folder(DOCS_FOLDER, OLLAMA_BASE_URL, OLLAMA_MODEL)
+
+            # Save embeddings to JSON file
+            import os
+            output_dir = os.path.dirname(os.path.abspath(__file__))
+            json_filepath = save_embeddings_json(embeddings, output_dir)
+
+            # Delete thinking indicator
+            await retry_telegram_call(thinking_msg.delete)
+            thinking_msg = None
+
+            # Send JSON file to user
+            await retry_telegram_call(
+                update.message.reply_document,
+                document=open(json_filepath, 'rb'),
+                filename=os.path.basename(json_filepath)
+            )
+
+            # Clean up the file after sending
+            os.remove(json_filepath)
+            logger.info(f"User {user_id}: Successfully sent embeddings file and cleaned up")
+
+        except OllamaError as e:
+            logger.error(f"User {user_id}: Ollama error: {e}", exc_info=True)
+            if thinking_msg:
+                try:
+                    await retry_telegram_call(thinking_msg.delete)
+                except Exception:
+                    pass
+            await retry_telegram_call(
+                update.message.reply_text,
+                f"❌ Failed to connect to Ollama at {OLLAMA_BASE_URL}. Please ensure Ollama is running with the {OLLAMA_MODEL} model.\n\nError: {str(e)}"
+            )
+
+        except FileNotFoundError as e:
+            logger.error(f"User {user_id}: File not found error: {e}", exc_info=True)
+            if thinking_msg:
+                try:
+                    await retry_telegram_call(thinking_msg.delete)
+                except Exception:
+                    pass
+            await retry_telegram_call(
+                update.message.reply_text,
+                f"❌ No markdown files found in docs/ directory.\n\nError: {str(e)}"
+            )
+
+        except Exception as e:
+            logger.error(f"User {user_id}: Error generating embeddings: {e}", exc_info=True)
+            if thinking_msg:
+                try:
+                    await retry_telegram_call(thinking_msg.delete)
+                except Exception:
+                    pass
+            await retry_telegram_call(
+                update.message.reply_text,
+                f"❌ Error generating embeddings: {str(e)}"
+            )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle user messages."""
@@ -422,6 +499,7 @@ You are a helpful assistant with access to task management and random facts tool
         self.application.add_handler(CommandHandler("fact", self.fact_command))
         self.application.add_handler(CommandHandler("subscribe", self.subscribe_command))
         self.application.add_handler(CommandHandler("unsubscribe", self.unsubscribe_command))
+        self.application.add_handler(CommandHandler("docs_embed", self.docs_embed_command))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
         logger.info("Starting Telegram bot")
