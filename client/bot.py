@@ -23,7 +23,9 @@ from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
 from mcp_manager import MCPManager
 from subscribers import SubscriberManager
-from embeddings import process_docs_folder, save_embeddings_json, OllamaError
+from embeddings import process_docs_folder, save_embeddings_json, create_faiss_index, get_ollama_embedding, OllamaError
+from rag_state_manager import RagStateManager
+from faiss_manager import FaissManager
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +63,8 @@ class TelegramBot:
         self.conversation_manager = ConversationManager()
         self.openrouter_client = OpenRouterClient()
         self.subscriber_manager = SubscriberManager()
+        self.rag_state_manager = RagStateManager()
+        self.faiss_manager = FaissManager()
         self.application: Optional[Application] = None
         self.openrouter_tools = []
 
@@ -218,6 +222,52 @@ class TelegramBot:
             "🔕 Periodic summaries disabled."
         )
 
+    async def rag_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /rag command to enable/disable RAG mode."""
+        user_id = update.effective_user.id
+        full_message = update.message.text
+        logger.info(f"User {user_id}: /rag command: {full_message}")
+
+        # Track user interaction
+        self.subscriber_manager.track_user_interaction(user_id)
+
+        # Extract argument
+        args = full_message.replace("/rag", "", 1).strip().lower()
+
+        # Parse boolean argument
+        enabled = None
+        if args in ["true", "on", "1", "yes"]:
+            enabled = True
+        elif args in ["false", "off", "0", "no"]:
+            enabled = False
+        else:
+            await retry_telegram_call(
+                update.message.reply_text,
+                "❌ Invalid argument. Use: /rag true|false|on|off|1|0|yes|no"
+            )
+            return
+
+        # Update RAG state
+        self.rag_state_manager.set_enabled(user_id, enabled)
+
+        if enabled:
+            # Check if FAISS index exists
+            if self.faiss_manager.index_exists():
+                await retry_telegram_call(
+                    update.message.reply_text,
+                    "✅ RAG mode enabled. Your queries will use document context."
+                )
+            else:
+                await retry_telegram_call(
+                    update.message.reply_text,
+                    "⚠️ RAG mode enabled, but no embeddings found. Use /docs_embed first, or queries will be sent without context."
+                )
+        else:
+            await retry_telegram_call(
+                update.message.reply_text,
+                "✅ RAG mode disabled. Queries will be sent without document context."
+            )
+
     async def docs_embed_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /docs_embed command."""
         user_id = update.effective_user.id
@@ -234,6 +284,9 @@ class TelegramBot:
 
             # Process docs folder and generate embeddings
             embeddings = await process_docs_folder(DOCS_FOLDER, OLLAMA_BASE_URL, OLLAMA_MODEL)
+
+            # Create FAISS index (overwrites existing)
+            create_faiss_index(embeddings)
 
             # Save embeddings to JSON file
             import os
@@ -308,11 +361,68 @@ class TelegramBot:
                 logger.info(f"User {user_id}: History cleared (reached limit)")
                 await update.message.reply_text("Conversation history cleared due to message limit.")
 
+            # Add original message to conversation history
             self.conversation_manager.add_message(user_id, "user", user_message)
 
             thinking_msg = await retry_telegram_call(update.message.reply_text, "Думаю...")
 
-            response_text = await self._process_with_openrouter(user_id, user_message)
+            # Check if RAG is enabled for this user
+            query_to_send = user_message
+            if self.rag_state_manager.is_enabled(user_id):
+                logger.info(f"User {user_id}: RAG mode enabled")
+
+                # Check if FAISS index exists
+                if self.faiss_manager.index_exists():
+                    try:
+                        # Generate embedding for user query
+                        logger.info(f"User {user_id}: Generating embedding for query: '{user_message}'")
+                        query_embedding = await get_ollama_embedding(
+                            user_message,
+                            OLLAMA_BASE_URL,
+                            OLLAMA_MODEL
+                        )
+                        logger.info(f"User {user_id}: Query embedding generated (dimension: {len(query_embedding)})")
+
+                        # Search FAISS for similar chunks
+                        similar_chunks = self.faiss_manager.search_similar(query_embedding, top_k=3)
+
+                        # Log retrieved chunks
+                        logger.info(f"User {user_id}: RAG query with {len(similar_chunks)} chunks retrieved")
+                        for i, chunk in enumerate(similar_chunks, 1):
+                            chunk_preview = chunk[:100].replace('\n', ' ')
+                            logger.info(f"User {user_id}: Chunk {i}/{len(similar_chunks)}: {chunk_preview}...")
+
+                        # Format augmented query
+                        context = " ".join([f"[[{chunk}]]" for chunk in similar_chunks])
+                        query_to_send = f"Context: {context}\n\nQuery: [[{user_message}]]"
+
+                        # Log augmented query
+                        logger.info(f"User {user_id}: Augmented query length: {len(query_to_send)} chars")
+                        logger.debug(f"User {user_id}: Full augmented query: {query_to_send}")
+
+                    except OllamaError as e:
+                        logger.error(f"User {user_id}: Failed to generate query embedding: {e}")
+                        # Fall back to standard query
+                        query_to_send = user_message
+                        logger.warning(f"User {user_id}: Falling back to standard query due to Ollama error")
+                    except Exception as e:
+                        logger.error(f"User {user_id}: Error during RAG processing: {e}", exc_info=True)
+                        # Fall back to standard query
+                        query_to_send = user_message
+                        logger.warning(f"User {user_id}: Falling back to standard query due to error")
+                else:
+                    logger.warning(f"User {user_id}: RAG enabled but no FAISS index found, sending standard query")
+
+            # Log the final query being sent to model
+            if query_to_send != user_message:
+                logger.info(f"User {user_id}: Sending RAG-augmented query to model")
+                logger.info(f"User {user_id}: Original query: '{user_message}'")
+                logger.info(f"User {user_id}: Full final query sent to model:\n{query_to_send}")
+            else:
+                logger.info(f"User {user_id}: Sending standard query to model: '{user_message}'")
+
+            # Process with OpenRouter (using augmented query if RAG enabled, or original message)
+            response_text = await self._process_with_openrouter(user_id, query_to_send)
 
             await retry_telegram_call(thinking_msg.delete)
             thinking_msg = None
@@ -359,7 +469,29 @@ class TelegramBot:
 
         current_date = datetime.now().strftime("%Y-%m-%d")
 
-        if force_tool_use:
+        # Check if this is a RAG query (starts with "Context:")
+        is_rag_query = user_message.startswith("Context:")
+
+        if is_rag_query:
+            logger.info(f"User {user_id}: Using RAG-specific system prompt")
+            system_prompt = {
+                "role": "system",
+                "content": f"""Current date: {current_date}. All dates must be calculated relative to this date.
+
+CRITICAL INSTRUCTIONS FOR ANSWERING:
+- You have been provided with CONTEXT from the user's documents inside [[double brackets]].
+- The user's actual QUERY is also marked inside [[double brackets]] after "Query:".
+- You MUST use the information from the Context to answer the Query.
+- ALWAYS prioritize information from the provided Context over your general knowledge.
+- If the answer is in the Context, use it directly - DO NOT say you cannot find it.
+- Quote relevant parts from the Context in your answer.
+- If the Context doesn't contain enough information to fully answer the Query, say so and provide what you can from the Context.
+- Answer in the same language as the user's query.
+- Be specific and detailed when using Context information.
+
+The Context contains chunks of documents that are semantically similar to the user's query. Use them wisely."""
+            }
+        elif force_tool_use:
             system_prompt = {
                 "role": "system",
                 "content": f"""Current date: {current_date}. All dates must be calculated relative to this date.
@@ -395,7 +527,24 @@ You are a helpful assistant with access to task management and random facts tool
 - You can use multiple tools in sequence if needed. For example, if the user asks to check their tasks and give a fact based on a condition, first use get_tasks, evaluate the condition, and then use get_fact if the condition is met."""
             }
 
-        messages_with_system = [system_prompt] + conversation_history
+        # For RAG queries, replace the last user message with the augmented query
+        if is_rag_query and conversation_history:
+            # Make a copy of conversation history
+            modified_history = conversation_history.copy()
+
+            # Find and replace the last user message with the augmented query
+            for i in range(len(modified_history) - 1, -1, -1):
+                if modified_history[i].get("role") == "user":
+                    logger.info(f"User {user_id}: Replacing last user message with RAG-augmented query")
+                    modified_history[i] = {
+                        "role": "user",
+                        "content": user_message  # This is the augmented query
+                    }
+                    break
+
+            messages_with_system = [system_prompt] + modified_history
+        else:
+            messages_with_system = [system_prompt] + conversation_history
 
         mcp_was_used = False
 
@@ -499,6 +648,7 @@ You are a helpful assistant with access to task management and random facts tool
         self.application.add_handler(CommandHandler("fact", self.fact_command))
         self.application.add_handler(CommandHandler("subscribe", self.subscribe_command))
         self.application.add_handler(CommandHandler("unsubscribe", self.unsubscribe_command))
+        self.application.add_handler(CommandHandler("rag", self.rag_command))
         self.application.add_handler(CommandHandler("docs_embed", self.docs_embed_command))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 

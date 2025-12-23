@@ -35,10 +35,14 @@ This system integrates three specialized MCP servers with a Telegram bot powered
 ### 🎲 Random Facts (facts-mcp)
 - On-demand interesting facts via `/fact` command
 
-### 📄 Document Embeddings (Ollama)
+### 📄 Document Embeddings & RAG (Ollama + FAISS)
 - Generate vector embeddings from markdown files
 - Uses local Ollama with nomic-embed-text model (768 dimensions)
 - Paragraph-based chunking for optimal embedding quality
+- **RAG (Retrieval Augmented Generation)** - Context-aware AI responses
+- FAISS vector search for semantic similarity (top-3 chunks)
+- Per-user RAG mode toggle with persistent state
+- Automatic context injection into queries
 - JSON output with timestamps for easy integration
 
 ## Architecture
@@ -62,7 +66,7 @@ MCP Manager (AsyncExitStack)
 - **Telegram Bot Token** (from @BotFather)
 - **OpenRouter API Key** (from openrouter.ai)
 - **Weeek API Token** (configured in mcp_tasks/weeek_api.py)
-- **Ollama with nomic-embed-text** (optional, for `/docs_embed` command)
+- **Ollama with nomic-embed-text** (optional, for `/docs_embed` and RAG features)
 
 ## Installation
 
@@ -143,7 +147,8 @@ npx -y @mobilenext/mobile-mcp@latest
 - `/start` - Welcome message
 - `/tasks [query]` - Query Weeek tasks
 - `/fact` - Get random fact
-- `/docs_embed` - Generate embeddings from docs/ markdown files
+- `/rag [true|false|on|off]` - Toggle RAG mode for context-aware responses
+- `/docs_embed` - Generate embeddings and FAISS index from docs/ markdown files
 - `/subscribe` - Enable periodic task summaries
 - `/unsubscribe` - Disable summaries
 
@@ -195,6 +200,8 @@ McpSystem/
 │   ├── openrouter_client.py
 │   ├── scheduler.py       # Periodic task monitoring
 │   ├── embeddings.py      # Document embeddings with Ollama
+│   ├── faiss_manager.py   # FAISS vector search for RAG
+│   ├── rag_state_manager.py  # Per-user RAG state persistence
 │   ├── config.py          # Configuration
 │   └── .env               # Credentials (not in git)
 ├── CLAUDE.md              # Detailed documentation
@@ -235,6 +242,8 @@ pkill -9 -f "Python main.py"
 - **MCP SDK** - MCP client implementation
 - **httpx** - OpenRouter API client
 - **AsyncExitStack** - Multi-context manager for MCP connections
+- **FAISS** - Vector similarity search for RAG
+- **NumPy** - Vector operations and normalization
 
 ### External Tools
 - **Node.js v22+** - Runtime for mobile-mcp
@@ -242,6 +251,17 @@ pkill -9 -f "Python main.py"
 - **Android Platform Tools (adb)** - Device communication
 
 ## Recent Updates
+
+### v2.2 - RAG (Retrieval Augmented Generation) System
+- ✅ Added `/rag` command for per-user RAG mode toggle
+- ✅ FAISS vector search integration (IndexFlatIP with cosine similarity)
+- ✅ Automatic context retrieval from document embeddings (top-3 chunks)
+- ✅ RAG-specific system prompt for context-aware AI responses
+- ✅ Per-user RAG state persistence across bot restarts
+- ✅ Comprehensive logging for embeddings, chunks, and augmented queries
+- ✅ Graceful fallback to standard mode on errors
+- ✅ Critical bug fix: Augmented queries now correctly sent to AI model
+- ✅ Enhanced `/docs_embed` to create FAISS index alongside JSON export
 
 ### v2.1 - Document Embeddings Feature
 - ✅ Added `/docs_embed` command for generating vector embeddings

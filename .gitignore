@@ -28,3 +28,6 @@ Thumbs.db
 # Runtime data
 client/tasks_snapshot.json
 client/subscribers.json
+client/rag_state.json
+client/faiss_index.bin
+client/faiss_metadata.json

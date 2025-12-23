@@ -327,7 +327,8 @@ All servers communicate via stdio (standard input/output).
 - `/tasks [query]` - Retrieve and query tasks from Weeek task tracker
 - `/subscribe` - Enable periodic task summaries every 2 minutes
 - `/unsubscribe` - Disable periodic task summaries
-- `/docs_embed` - Generate embeddings for all markdown files in docs/ folder
+- `/rag [true|false|on|off|1|0|yes|no]` - Enable or disable RAG (Retrieval Augmented Generation) mode
+- `/docs_embed` - Generate embeddings for all markdown files in docs/ folder and create FAISS index
 
 ### Command Behavior
 
@@ -536,10 +537,16 @@ curl http://localhost:11434/api/tags
    - Sends each chunk to Ollama API at `http://localhost:11434/api/embeddings`
    - Uses `nomic-embed-text` model (768-dimensional embeddings)
    - Receives embedding vector for each chunk
-5. **JSON creation**:
+5. **FAISS index creation**:
+   - Creates FAISS IndexFlatIP with normalized vectors
+   - Saves index to `client/faiss_index.bin`
+   - Saves metadata to `client/faiss_metadata.json`
+   - Overwrites existing index if present
+   - Enables RAG (Retrieval Augmented Generation) functionality
+6. **JSON creation**:
    - Creates JSON file with timestamp: `embeddings_YYYY-MM-DD_HH-MM-SS.json`
    - Structure: `[{"text": "chunk content", "embedding": [0.123, ...]}, ...]`
-6. **File delivery**:
+7. **File delivery**:
    - Deletes "Думаю..." thinking indicator
    - Sends JSON file to user via Telegram
    - Cleans up temporary file after sending
@@ -607,6 +614,172 @@ Generated embeddings can be used for:
 - **RAG systems** - Retrieval-Augmented Generation for AI chatbots
 - **Clustering** - Group similar documents together
 - **Question answering** - Build knowledge bases for question-answering systems
+
+## RAG (Retrieval Augmented Generation)
+
+The bot includes a RAG system that enhances AI responses with context from your document embeddings. When enabled, the bot retrieves relevant document chunks and includes them in the query to provide more contextual, informed answers.
+
+### Prerequisites
+
+- **Ollama** must be installed and running on `http://localhost:11434`
+- **nomic-embed-text model** must be available in Ollama
+- **Document embeddings** must be generated first using `/docs_embed`
+- **FAISS index** is created automatically by `/docs_embed` command
+
+### How RAG Works
+
+1. **Enable RAG mode** - User sends `/rag true` to enable RAG for their account
+2. **User sends query** - User sends a regular message to the bot
+3. **Query embedding** - Bot generates embedding for the user's query using Ollama
+4. **Semantic search** - Bot searches FAISS index for top-3 most similar document chunks using cosine similarity
+5. **Context augmentation** - Bot prepends retrieved chunks to the query:
+   ```
+   Context: [[chunk1]] [[chunk2]] [[chunk3]]
+
+   Query: [[user's original message]]
+   ```
+6. **AI processing** - Augmented query is sent to OpenRouter AI model
+7. **Contextual response** - Model generates response using both query and retrieved context
+8. **History management** - Only the original user message (not augmented version) is stored in conversation history
+
+### RAG State Management
+
+- **Per-user state** - RAG mode is tracked separately for each user
+- **Persistent state** - RAG preferences survive bot restarts (stored in `client/rag_state.json`)
+- **Independent control** - Each user can enable/disable RAG independently
+
+### FAISS Index
+
+- **Storage location** - `client/faiss_index.bin` (FAISS binary) and `client/faiss_metadata.json` (chunk texts)
+- **Index type** - `IndexFlatIP` (Inner Product) with normalized vectors for cosine similarity
+- **Similarity metric** - Cosine similarity (values from -1 to 1, where 1 = identical)
+- **Top-k retrieval** - Always retrieves top-3 most similar chunks (no threshold)
+- **Regeneration** - Index is overwritten each time `/docs_embed` is called
+
+### RAG Commands
+
+**Enable RAG:**
+```
+/rag true
+/rag on
+/rag 1
+/rag yes
+```
+
+**Disable RAG:**
+```
+/rag false
+/rag off
+/rag 0
+/rag no
+```
+
+### RAG Workflow Example
+
+**Step 1: Generate embeddings**
+```
+User: /docs_embed
+Bot: Думаю...
+Bot: [Sends embeddings JSON file]
+```
+*This creates both JSON file and FAISS index*
+
+**Step 2: Enable RAG**
+```
+User: /rag true
+Bot: ✅ RAG mode enabled. Your queries will use document context.
+```
+
+**Step 3: Ask questions with context**
+```
+User: How does the task monitoring system work?
+Bot: Думаю...
+Bot: Based on the documentation, the task monitoring system works as follows:
+[Detailed answer using context from docs/]
+```
+
+### RAG Behavior
+
+**When RAG is enabled:**
+- Bot retrieves top-3 similar chunks from FAISS index
+- Chunks are prepended to user query
+- AI model receives both context and query
+- Responses are more accurate and contextual
+
+**When RAG is disabled:**
+- Bot sends queries directly to AI model
+- No document context is retrieved
+- Standard conversational mode (default behavior)
+
+**When RAG is enabled but no embeddings exist:**
+- Bot logs warning: `"RAG enabled but no FAISS index found"`
+- Query is sent without context (fallback to standard mode)
+- No error shown to user
+
+### Error Handling
+
+**Ollama unavailable during query:**
+- Logs error and falls back to standard query
+- Warning: `"Falling back to standard query due to Ollama error"`
+- User receives normal response without RAG context
+
+**FAISS index corrupted:**
+- Logs error and falls back to standard query
+- User may need to regenerate embeddings with `/docs_embed`
+
+**No embeddings when enabling RAG:**
+- Bot warns: `"⚠️ RAG mode enabled, but no embeddings found. Use /docs_embed first, or queries will be sent without context."`
+- RAG mode is still enabled, but queries fall back to standard mode until embeddings are created
+
+### Logging
+
+**RAG operations log:**
+- `"User {id}: RAG enabled"` - When user enables RAG
+- `"User {id}: RAG disabled"` - When user disables RAG
+- `"User {id}: RAG mode enabled"` - When processing message in RAG mode
+- `"User {id}: RAG query with 3 chunks retrieved"` - Successful RAG retrieval
+- `"User {id}: RAG enabled but no FAISS index found, sending standard query"` - Fallback warning
+- `"User {id}: Falling back to standard query due to Ollama error"` - Error fallback
+- DEBUG logs show similarity scores and chunk previews (first 50 chars)
+
+### Use Cases
+
+**Documentation Q&A:**
+- Enable RAG after indexing project documentation
+- Ask questions about system architecture, APIs, workflows
+- Get answers grounded in actual documentation
+
+**Code assistance:**
+- Index code documentation and technical specs
+- Ask implementation questions
+- Receive contextually accurate guidance
+
+**Knowledge base:**
+- Index company policies, procedures, guides
+- Query specific information
+- Get answers directly from indexed sources
+
+### Technical Details
+
+**Embedding model:**
+- `nomic-embed-text` via Ollama
+- 768-dimensional vectors
+- L2 normalization for cosine similarity
+
+**Chunking strategy:**
+- Documents split by paragraphs (double newlines `\n\n`)
+- Each chunk embedded independently
+- Chunks stored with full text in metadata
+
+**Search algorithm:**
+- Top-3 chunks retrieved per query
+- Cosine similarity via FAISS IndexFlatIP
+- No similarity threshold (always returns top-3)
+
+**Context format:**
+- Chunks wrapped in double brackets: `[[chunk text]]`
+- Concatenated with spaces between
+- Prepended to query with "Context:" and "Query:" labels
 
 ## Configuration
 

@@ -8,6 +8,7 @@ import logging
 from typing import List, Dict
 from datetime import datetime
 import httpx
+from faiss_manager import FaissManager
 
 logger = logging.getLogger(__name__)
 
@@ -163,3 +164,29 @@ def save_embeddings_json(embeddings: List[Dict], output_dir: str) -> str:
 
     logger.info(f"Saved embeddings to {filepath}")
     return filepath
+
+
+def create_faiss_index(embeddings: List[Dict]) -> None:
+    """
+    Create FAISS index from embeddings and save to disk.
+
+    Overwrites existing index if present.
+
+    Args:
+        embeddings: List of embedding dictionaries with 'text' and 'embedding' keys
+
+    Raises:
+        ValueError: If embeddings is empty or malformed
+    """
+    if not embeddings:
+        raise ValueError("Cannot create FAISS index from empty embeddings")
+
+    # Extract vectors and texts
+    vectors = [item["embedding"] for item in embeddings]
+    texts = [item["text"] for item in embeddings]
+
+    # Create FAISS index
+    faiss_manager = FaissManager()
+    faiss_manager.create_index(vectors, texts)
+
+    logger.info(f"Created FAISS index with {len(embeddings)} chunks")
