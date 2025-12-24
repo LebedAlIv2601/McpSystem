@@ -137,17 +137,20 @@ class FaissManager:
     def search_similar(
         self,
         query_embedding: List[float],
-        top_k: int = 3
-    ) -> List[str]:
+        top_k: int = 3,
+        similarity_threshold: float = 0.0
+    ) -> List[Tuple[str, float]]:
         """
-        Search for top-k most similar chunks
+        Search for top-k most similar chunks with optional similarity filtering
 
         Args:
             query_embedding: Query vector
             top_k: Number of results to return
+            similarity_threshold: Minimum cosine similarity score (0.0 to 1.0)
 
         Returns:
-            List of chunk texts ordered by similarity (most similar first)
+            List of tuples (chunk_text, similarity_score) ordered by similarity (most similar first)
+            Only includes chunks with similarity >= similarity_threshold
 
         Raises:
             RuntimeError: If index not loaded
@@ -161,24 +164,62 @@ class FaissManager:
 
         # Convert to numpy and normalize
         query_vector = np.array([query_embedding], dtype=np.float32)
+        logger.debug(f"FAISS: Query vector shape: {query_vector.shape}")
+        logger.debug(f"FAISS: Query vector L2 norm (before normalization): {np.linalg.norm(query_vector):.6f}")
+
         query_vector_normalized = self.normalize_vectors(query_vector)
+        logger.debug(f"FAISS: Query vector L2 norm (after normalization): {np.linalg.norm(query_vector_normalized):.6f}")
 
         # Search index
         # Returns: distances (cosine similarities), indices
+        logger.info(f"FAISS: Searching index with {self.index.ntotal} vectors")
+        logger.info(f"FAISS: Requesting top-{top_k} results")
         distances, indices = self.index.search(query_vector_normalized, top_k)
+        logger.info(f"FAISS: ✓ Search complete")
 
-        # Extract texts
-        results = []
-        for i, (idx, score) in enumerate(zip(indices[0], distances[0])):
+        logger.info(f"\nFAISS: Raw search results (before filtering):")
+        logger.info(f"{'─'*60}")
+        for i, (idx, score) in enumerate(zip(indices[0], distances[0]), 1):
             if idx < len(self.metadata):
                 text = self.metadata[idx]["text"]
-                results.append(text)
-                logger.debug(
-                    f"Chunk {i+1}/{top_k}: score={score:.4f}, "
-                    f"text={text[:50]}..."
-                )
+                chunk_preview = text[:100].replace('\n', ' ')
+                status = "PASS" if score >= similarity_threshold else "FILTERED"
+                logger.info(f"\n  Result[{i}/{top_k}]:")
+                logger.info(f"    Index: {idx}")
+                logger.info(f"    Similarity Score: {score:.6f}")
+                logger.info(f"    Status: {status} (threshold: {similarity_threshold})")
+                logger.info(f"    Chunk Preview: \"{chunk_preview}...\"")
 
-        logger.info(f"Retrieved {len(results)} similar chunks (top-{top_k})")
+        # Extract texts with scores and apply threshold filter
+        results = []
+        filtered_count = 0
+        logger.info(f"\n{'─'*60}")
+        logger.info(f"FAISS: Applying similarity threshold filter (>= {similarity_threshold})")
+        logger.info(f"{'─'*60}")
+
+        for i, (idx, score) in enumerate(zip(indices[0], distances[0])):
+            if idx < len(self.metadata):
+                # Apply similarity threshold filter
+                if score >= similarity_threshold:
+                    text = self.metadata[idx]["text"]
+                    results.append((text, float(score)))
+                    logger.info(f"  ✓ Chunk {i+1}/{top_k}: score={score:.6f} PASSED")
+                else:
+                    filtered_count += 1
+                    logger.info(f"  ✗ Chunk {i+1}/{top_k}: score={score:.6f} FILTERED")
+
+        logger.info(f"\n{'─'*60}")
+        logger.info(f"FAISS: Filtering summary:")
+        logger.info(f"  Total retrieved: {top_k}")
+        logger.info(f"  Passed filter: {len(results)}")
+        logger.info(f"  Filtered out: {filtered_count}")
+        logger.info(f"  Pass rate: {len(results)/top_k*100:.1f}%")
+        if results:
+            scores = [score for _, score in results]
+            logger.info(f"  Score range (passed): [{min(scores):.6f}, {max(scores):.6f}]")
+            logger.info(f"  Mean score (passed): {sum(scores)/len(scores):.6f}")
+        logger.info(f"{'─'*60}\n")
+
         return results
 
     def index_exists(self) -> bool:

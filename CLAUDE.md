@@ -282,6 +282,13 @@ cp .env.example .env
 
 ### Start Telegram Bot (Automatically Starts All MCP Servers)
 
+**macOS users:** Add OpenMP workaround to avoid conflicts:
+```bash
+echo 'export KMP_DUPLICATE_LIB_OK=TRUE' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**Start the bot:**
 ```bash
 cd client
 ../venv/bin/python main.py
@@ -625,22 +632,39 @@ The bot includes a RAG system that enhances AI responses with context from your 
 - **nomic-embed-text model** must be available in Ollama
 - **Document embeddings** must be generated first using `/docs_embed`
 - **FAISS index** is created automatically by `/docs_embed` command
+- **sentence-transformers** library for cross-encoder reranking (`pip install sentence-transformers>=2.2.0`)
 
-### How RAG Works
+### How RAG Works (4-Stage Pipeline)
 
-1. **Enable RAG mode** - User sends `/rag true` to enable RAG for their account
-2. **User sends query** - User sends a regular message to the bot
-3. **Query embedding** - Bot generates embedding for the user's query using Ollama
-4. **Semantic search** - Bot searches FAISS index for top-3 most similar document chunks using cosine similarity
-5. **Context augmentation** - Bot prepends retrieved chunks to the query:
+The RAG system uses a sophisticated 4-stage retrieval pipeline with filtering and reranking:
+
+**Stage 1: Query Embedding Generation**
+1. User enables RAG mode with `/rag true`
+2. User sends a query to the bot
+3. Bot generates 768-dimensional embedding using Ollama's `nomic-embed-text` model
+
+**Stage 2: FAISS Retrieval & Filtering**
+4. Bot searches FAISS index for top-10 most similar document chunks
+5. Applies cosine similarity threshold filter (≥ 0.71)
+6. Only chunks passing the threshold proceed to reranking
+7. If no chunks pass filter, falls back to standard query
+
+**Stage 3: Cross-Encoder Reranking**
+8. Filtered chunks are reranked using BGE reranker model (`BAAI/bge-reranker-base`)
+9. Cross-encoder computes relevance scores for each query-document pair
+10. Chunks are reordered by relevance (most relevant first)
+11. Top-3 reranked chunks are selected for context
+
+**Stage 4: Query Augmentation**
+12. Selected chunks are prepended to the query:
    ```
    Context: [[chunk1]] [[chunk2]] [[chunk3]]
 
    Query: [[user's original message]]
    ```
-6. **AI processing** - Augmented query is sent to OpenRouter AI model
-7. **Contextual response** - Model generates response using both query and retrieved context
-8. **History management** - Only the original user message (not augmented version) is stored in conversation history
+13. Augmented query is sent to OpenRouter AI model
+14. Model generates response using both query and retrieved context
+15. Only the original user message (not augmented version) is stored in conversation history
 
 ### RAG State Management
 
@@ -653,7 +677,8 @@ The bot includes a RAG system that enhances AI responses with context from your 
 - **Storage location** - `client/faiss_index.bin` (FAISS binary) and `client/faiss_metadata.json` (chunk texts)
 - **Index type** - `IndexFlatIP` (Inner Product) with normalized vectors for cosine similarity
 - **Similarity metric** - Cosine similarity (values from -1 to 1, where 1 = identical)
-- **Top-k retrieval** - Always retrieves top-3 most similar chunks (no threshold)
+- **Top-k retrieval** - Retrieves top-10 chunks (configurable via `RAG_RETRIEVAL_TOP_K`)
+- **Similarity threshold** - Filters chunks with cosine similarity < 0.71 (configurable via `SIMILARITY_THRESHOLD`)
 - **Regeneration** - Index is overwritten each time `/docs_embed` is called
 
 ### RAG Commands
@@ -701,7 +726,10 @@ Bot: Based on the documentation, the task monitoring system works as follows:
 ### RAG Behavior
 
 **When RAG is enabled:**
-- Bot retrieves top-3 similar chunks from FAISS index
+- Bot retrieves top-10 similar chunks from FAISS index
+- Filters chunks with similarity score ≥ 0.71
+- Reranks filtered chunks using cross-encoder
+- Selects top-3 reranked chunks for context
 - Chunks are prepended to user query
 - AI model receives both context and query
 - Responses are more accurate and contextual
@@ -716,6 +744,11 @@ Bot: Based on the documentation, the task monitoring system works as follows:
 - Query is sent without context (fallback to standard mode)
 - No error shown to user
 
+**When no chunks pass similarity threshold:**
+- Bot logs warning: `"No chunks passed similarity threshold"`
+- Query is sent without context (fallback to standard mode)
+- Detailed logging shows which chunks were filtered
+
 ### Error Handling
 
 **Ollama unavailable during query:**
@@ -727,20 +760,95 @@ Bot: Based on the documentation, the task monitoring system works as follows:
 - Logs error and falls back to standard query
 - User may need to regenerate embeddings with `/docs_embed`
 
+**Reranking fails:**
+- Logs error: `"Reranking failed: {error}"`
+- Falls back to FAISS-ranked chunks (uses top-3 from similarity search)
+- User receives response with FAISS-ranked context
+- Common causes: model not downloaded, sentence-transformers not installed
+
 **No embeddings when enabling RAG:**
 - Bot warns: `"⚠️ RAG mode enabled, but no embeddings found. Use /docs_embed first, or queries will be sent without context."`
 - RAG mode is still enabled, but queries fall back to standard mode until embeddings are created
 
+**sentence-transformers not installed:**
+- Reranker initialization fails on first query
+- Error: `"sentence-transformers not installed"`
+- Install with: `pip install sentence-transformers>=2.2.0`
+- Falls back to FAISS-ranked chunks until installed
+
 ### Logging
 
-**RAG operations log:**
-- `"User {id}: RAG enabled"` - When user enables RAG
-- `"User {id}: RAG disabled"` - When user disables RAG
-- `"User {id}: RAG mode enabled"` - When processing message in RAG mode
-- `"User {id}: RAG query with 3 chunks retrieved"` - Successful RAG retrieval
-- `"User {id}: RAG enabled but no FAISS index found, sending standard query"` - Fallback warning
-- `"User {id}: Falling back to standard query due to Ollama error"` - Error fallback
-- DEBUG logs show similarity scores and chunk previews (first 50 chars)
+**Comprehensive 4-Stage Pipeline Logging:**
+
+The RAG system includes detailed logging for each pipeline stage with actual data:
+
+**Stage 1 - Query Embedding:**
+- Ollama endpoint and model
+- Embedding dimension (768)
+- Embedding sample values (first 10)
+- L2 norm of embedding vector
+
+**Stage 2 - FAISS Retrieval & Filtering:**
+- Retrieval parameters (top_k=10, threshold=0.71)
+- Raw search results with similarity scores
+- Filtering results (chunks passed/filtered)
+- Pass rate percentage
+- Score range and mean for passed chunks
+
+**Stage 3 - Cross-Encoder Reranking:**
+- Reranker model name (BAAI/bge-reranker-base)
+- Input chunk count
+- Cross-encoder relevance scores for all chunks
+- Reranked order with scores
+- Top-3 selection with final scores
+
+**Stage 4 - Query Augmentation:**
+- Original query length
+- Context length
+- Augmented query length
+- Expansion ratio
+- Full augmented query text
+
+**Pipeline Completion:**
+- Summary of all 4 stages
+- Chunk counts at each stage
+- Ready-to-send status
+
+**Logging levels:**
+- INFO: Pipeline stages, summaries, chunk counts
+- DEBUG: Full chunk texts, embedding vectors, detailed scores
+- ERROR: Failures with full stack traces
+
+**Example log output:**
+```
+================================================================================
+User 12345: RAG PIPELINE STARTED
+================================================================================
+────────────────────────────────────────────────────────────────
+User 12345: STEP 1 - QUERY EMBEDDING GENERATION
+────────────────────────────────────────────────────────────────
+User 12345: ✓ Embedding generated successfully
+User 12345: Embedding dimension: 768
+────────────────────────────────────────────────────────────────
+User 12345: STEP 2 - FAISS RETRIEVAL & FILTERING
+────────────────────────────────────────────────────────────────
+FAISS: Retrieved 6 chunks (after filtering threshold >= 0.71)
+FAISS: Pass rate: 60.0%
+────────────────────────────────────────────────────────────────
+User 12345: STEP 3 - CROSS-ENCODER RERANKING
+────────────────────────────────────────────────────────────────
+RERANKER: ✓ Reranking complete
+RERANKER: Score range: [0.156789, 0.945678]
+────────────────────────────────────────────────────────────────
+User 12345: STEP 4 - QUERY AUGMENTATION
+────────────────────────────────────────────────────────────────
+User 12345: Augmentation statistics:
+  - context_chunks: 3
+  - expansion_ratio: 42.87x
+================================================================================
+User 12345: RAG PIPELINE COMPLETED SUCCESSFULLY
+================================================================================
+```
 
 ### Use Cases
 
@@ -771,15 +879,31 @@ Bot: Based on the documentation, the task monitoring system works as follows:
 - Each chunk embedded independently
 - Chunks stored with full text in metadata
 
-**Search algorithm:**
-- Top-3 chunks retrieved per query
+**Retrieval algorithm (Stage 2):**
+- Top-10 chunks retrieved per query (configurable via `RAG_RETRIEVAL_TOP_K`)
 - Cosine similarity via FAISS IndexFlatIP
-- No similarity threshold (always returns top-3)
+- Similarity threshold filter: ≥ 0.71 (configurable via `SIMILARITY_THRESHOLD`)
+- Only chunks passing threshold proceed to reranking
+
+**Reranking algorithm (Stage 3):**
+- Model: `BAAI/bge-reranker-base` (~280MB)
+- Architecture: Cross-encoder (query-document pairs)
+- Framework: sentence-transformers library
+- Scores: Relevance scores (higher = more relevant)
+- Selection: Top-3 highest scoring chunks (configurable via `RAG_FINAL_TOP_K`)
+- Lazy initialization: Model downloads on first use
+- Fallback: Uses FAISS ranking if reranking fails
 
 **Context format:**
 - Chunks wrapped in double brackets: `[[chunk text]]`
 - Concatenated with spaces between
 - Prepended to query with "Context:" and "Query:" labels
+
+**Performance characteristics:**
+- FAISS search: ~5-10ms for 100 chunks
+- Reranking: ~50-200ms for 10 chunks (depends on chunk length)
+- Total pipeline: ~100-300ms end-to-end
+- First query slower (~2-3s) due to model download
 
 ## Configuration
 
@@ -802,6 +926,12 @@ Edit `client/config.py`:
 - `SUMMARY_INTERVAL` - Seconds between summaries (default: 120)
 - `TASKS_SNAPSHOT_FILE` - Task snapshot JSON file name
 - `SUBSCRIBERS_FILE` - Subscribers JSON file name
+
+**RAG Configuration:**
+- `RERANKER_MODEL` - Reranker model name (default: "bge-reranker-base")
+- `SIMILARITY_THRESHOLD` - Minimum cosine similarity (default: 0.71)
+- `RAG_RETRIEVAL_TOP_K` - Initial FAISS retrieval count (default: 10)
+- `RAG_FINAL_TOP_K` - Final chunks after reranking (default: 3)
 
 ### Environment Variables
 

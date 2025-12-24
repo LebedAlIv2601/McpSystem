@@ -35,14 +35,18 @@ This system integrates three specialized MCP servers with a Telegram bot powered
 ### 🎲 Random Facts (facts-mcp)
 - On-demand interesting facts via `/fact` command
 
-### 📄 Document Embeddings & RAG (Ollama + FAISS)
+### 📄 Document Embeddings & RAG (Ollama + FAISS + Reranking)
 - Generate vector embeddings from markdown files
 - Uses local Ollama with nomic-embed-text model (768 dimensions)
 - Paragraph-based chunking for optimal embedding quality
-- **RAG (Retrieval Augmented Generation)** - Context-aware AI responses
-- FAISS vector search for semantic similarity (top-3 chunks)
+- **RAG (Retrieval Augmented Generation)** - 4-stage pipeline for context-aware responses:
+  1. Query embedding generation (Ollama)
+  2. FAISS vector search (top-10) + similarity filtering (≥0.71)
+  3. Cross-encoder reranking (BGE reranker model)
+  4. Query augmentation with top-3 reranked chunks
 - Per-user RAG mode toggle with persistent state
-- Automatic context injection into queries
+- Comprehensive logging for all pipeline stages
+- Automatic fallback handling for robustness
 - JSON output with timestamps for easy integration
 
 ## Architecture
@@ -67,6 +71,7 @@ MCP Manager (AsyncExitStack)
 - **OpenRouter API Key** (from openrouter.ai)
 - **Weeek API Token** (configured in mcp_tasks/weeek_api.py)
 - **Ollama with nomic-embed-text** (optional, for `/docs_embed` and RAG features)
+- **sentence-transformers** (optional, for RAG reranking - installs with PyTorch)
 
 ## Installation
 
@@ -121,13 +126,22 @@ curl http://localhost:11434/api/tags
 
 ## Running the System
 
+### macOS OpenMP Workaround (Required)
+Add environment variable to avoid OpenMP library conflicts:
+```bash
+echo 'export KMP_DUPLICATE_LIB_OK=TRUE' >> ~/.zshrc
+source ~/.zshrc
+```
+
 ### Start All MCP Servers + Bot
 ```bash
 cd client
 ../venv/bin/python main.py
 ```
 
-**First run:** May take 30-40 seconds while mobile-mcp downloads and initializes.
+**First run:**
+- May take 30-40 seconds while mobile-mcp downloads and initializes
+- BGE reranker model (~280MB) downloads automatically on first RAG query
 
 ### Test Individual MCP Servers (Optional)
 ```bash
@@ -201,6 +215,7 @@ McpSystem/
 │   ├── scheduler.py       # Periodic task monitoring
 │   ├── embeddings.py      # Document embeddings with Ollama
 │   ├── faiss_manager.py   # FAISS vector search for RAG
+│   ├── reranker.py        # Cross-encoder reranking (BGE model)
 │   ├── rag_state_manager.py  # Per-user RAG state persistence
 │   ├── config.py          # Configuration
 │   └── .env               # Credentials (not in git)
@@ -244,6 +259,8 @@ pkill -9 -f "Python main.py"
 - **AsyncExitStack** - Multi-context manager for MCP connections
 - **FAISS** - Vector similarity search for RAG
 - **NumPy** - Vector operations and normalization
+- **sentence-transformers** - Cross-encoder reranking (BGE model)
+- **PyTorch** - Deep learning backend for reranking
 
 ### External Tools
 - **Node.js v22+** - Runtime for mobile-mcp
@@ -251,6 +268,20 @@ pkill -9 -f "Python main.py"
 - **Android Platform Tools (adb)** - Device communication
 
 ## Recent Updates
+
+### v2.3 - RAG Enhancement: Reranking & Filtering Pipeline
+- ✅ Added 4-stage RAG pipeline for improved retrieval accuracy
+- ✅ Stage 1: Query embedding generation with Ollama (768 dims)
+- ✅ Stage 2: FAISS retrieval (top-10) + cosine similarity filtering (≥0.71)
+- ✅ Stage 3: Cross-encoder reranking with BGE reranker model
+- ✅ Stage 4: Query augmentation with top-3 reranked chunks
+- ✅ Integrated sentence-transformers library for reranking
+- ✅ Added `reranker.py` module with lazy model initialization
+- ✅ Comprehensive logging for all 4 pipeline stages with data printing
+- ✅ Configurable thresholds and top-k values in config.py
+- ✅ Automatic fallback handling (reranking → FAISS → standard query)
+- ✅ Added OpenMP workaround for macOS (KMP_DUPLICATE_LIB_OK)
+- ✅ Updated documentation with detailed pipeline flow diagrams
 
 ### v2.2 - RAG (Retrieval Augmented Generation) System
 - ✅ Added `/rag` command for per-user RAG mode toggle

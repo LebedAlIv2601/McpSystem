@@ -17,7 +17,11 @@ from config import (
     MCP_USED_INDICATOR,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
-    DOCS_FOLDER
+    DOCS_FOLDER,
+    RERANKER_MODEL,
+    SIMILARITY_THRESHOLD,
+    RAG_RETRIEVAL_TOP_K,
+    RAG_FINAL_TOP_K
 )
 from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
@@ -26,6 +30,7 @@ from subscribers import SubscriberManager
 from embeddings import process_docs_folder, save_embeddings_json, create_faiss_index, get_ollama_embedding, OllamaError
 from rag_state_manager import RagStateManager
 from faiss_manager import FaissManager
+from reranker import OllamaReranker
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +70,7 @@ class TelegramBot:
         self.subscriber_manager = SubscriberManager()
         self.rag_state_manager = RagStateManager()
         self.faiss_manager = FaissManager()
+        self.reranker = OllamaReranker(model_name="BAAI/bge-reranker-base")
         self.application: Optional[Application] = None
         self.openrouter_tools = []
 
@@ -369,49 +375,189 @@ class TelegramBot:
             # Check if RAG is enabled for this user
             query_to_send = user_message
             if self.rag_state_manager.is_enabled(user_id):
-                logger.info(f"User {user_id}: RAG mode enabled")
+                logger.info(f"\n{'='*80}")
+                logger.info(f"User {user_id}: RAG PIPELINE STARTED")
+                logger.info(f"User {user_id}: Original query: '{user_message}'")
+                logger.info(f"{'='*80}\n")
 
                 # Check if FAISS index exists
                 if self.faiss_manager.index_exists():
                     try:
-                        # Generate embedding for user query
-                        logger.info(f"User {user_id}: Generating embedding for query: '{user_message}'")
+                        # STEP 1: Generate embedding for user query
+                        logger.info(f"\n{'─'*80}")
+                        logger.info(f"User {user_id}: STEP 1 - QUERY EMBEDDING GENERATION")
+                        logger.info(f"{'─'*80}")
+                        logger.info(f"User {user_id}: Query text: '{user_message}'")
+                        logger.info(f"User {user_id}: Ollama endpoint: {OLLAMA_BASE_URL}")
+                        logger.info(f"User {user_id}: Embedding model: {OLLAMA_MODEL}")
+
                         query_embedding = await get_ollama_embedding(
                             user_message,
                             OLLAMA_BASE_URL,
                             OLLAMA_MODEL
                         )
-                        logger.info(f"User {user_id}: Query embedding generated (dimension: {len(query_embedding)})")
 
-                        # Search FAISS for similar chunks
-                        similar_chunks = self.faiss_manager.search_similar(query_embedding, top_k=3)
+                        logger.info(f"User {user_id}: ✓ Embedding generated successfully")
+                        logger.info(f"User {user_id}: Embedding dimension: {len(query_embedding)}")
+                        logger.info(f"User {user_id}: Embedding sample (first 10 values): {query_embedding[:10]}")
+                        logger.info(f"User {user_id}: Embedding L2 norm: {sum(x**2 for x in query_embedding)**0.5:.4f}")
 
-                        # Log retrieved chunks
-                        logger.info(f"User {user_id}: RAG query with {len(similar_chunks)} chunks retrieved")
-                        for i, chunk in enumerate(similar_chunks, 1):
-                            chunk_preview = chunk[:100].replace('\n', ' ')
-                            logger.info(f"User {user_id}: Chunk {i}/{len(similar_chunks)}: {chunk_preview}...")
+                        # STEP 2: Search FAISS for similar chunks with filtering
+                        logger.info(f"\n{'─'*80}")
+                        logger.info(f"User {user_id}: STEP 2 - FAISS RETRIEVAL & FILTERING")
+                        logger.info(f"{'─'*80}")
+                        logger.info(f"User {user_id}: Retrieval parameters:")
+                        logger.info(f"User {user_id}:   - top_k: {RAG_RETRIEVAL_TOP_K}")
+                        logger.info(f"User {user_id}:   - similarity_threshold: {SIMILARITY_THRESHOLD}")
+                        logger.info(f"User {user_id}:   - similarity_metric: cosine (via IndexFlatIP)")
 
-                        # Format augmented query
-                        context = " ".join([f"[[{chunk}]]" for chunk in similar_chunks])
-                        query_to_send = f"Context: {context}\n\nQuery: [[{user_message}]]"
+                        chunks_with_scores = self.faiss_manager.search_similar(
+                            query_embedding,
+                            top_k=RAG_RETRIEVAL_TOP_K,
+                            similarity_threshold=SIMILARITY_THRESHOLD
+                        )
 
-                        # Log augmented query
-                        logger.info(f"User {user_id}: Augmented query length: {len(query_to_send)} chars")
-                        logger.debug(f"User {user_id}: Full augmented query: {query_to_send}")
+                        logger.info(f"User {user_id}: ✓ FAISS search complete")
+                        logger.info(f"User {user_id}: Retrieved chunks: {len(chunks_with_scores)} (after filtering)")
+                        logger.info(f"User {user_id}: Chunks that passed threshold: {len(chunks_with_scores)}/{RAG_RETRIEVAL_TOP_K}")
+
+                        if chunks_with_scores:
+                            logger.info(f"\nUser {user_id}: FAISS Results (with scores):")
+                            for i, (chunk, score) in enumerate(chunks_with_scores, 1):
+                                logger.info(f"\n  User {user_id}: [{i}] FAISS Rank: {i}/{len(chunks_with_scores)}")
+                                logger.info(f"      User {user_id}: Similarity Score: {score:.6f}")
+                                logger.info(f"      User {user_id}: Chunk Length: {len(chunk)} chars")
+                                logger.info(f"      User {user_id}: Chunk Preview (first 150 chars):")
+                                chunk_preview = chunk[:150].replace('\n', ' ')
+                                logger.info(f"      User {user_id}: \"{chunk_preview}...\"")
+                                if len(chunk) > 150:
+                                    logger.info(f"      User {user_id}: Full Chunk Text:")
+                                    for line in chunk.split('\n')[:5]:  # First 5 lines
+                                        logger.info(f"      User {user_id}: | {line}")
+                                    if len(chunk.split('\n')) > 5:
+                                        logger.info(f"      User {user_id}: | ... ({len(chunk.split('\n')) - 5} more lines)")
+
+                        # Check if any chunks passed the filter
+                        if not chunks_with_scores:
+                            logger.warning(f"\n{'─'*80}")
+                            logger.warning(f"User {user_id}: ⚠ WARNING - NO CHUNKS PASSED FILTER")
+                            logger.warning(f"{'─'*80}")
+                            logger.warning(
+                                f"User {user_id}: All {RAG_RETRIEVAL_TOP_K} retrieved chunks had similarity < {SIMILARITY_THRESHOLD}"
+                            )
+                            logger.warning(f"User {user_id}: Falling back to standard query (no RAG context)")
+                            logger.warning(f"{'─'*80}\n")
+                            # Fall back to standard query
+                            query_to_send = user_message
+                        else:
+                            # STEP 3: Rerank filtered chunks
+                            logger.info(f"\n{'─'*80}")
+                            logger.info(f"User {user_id}: STEP 3 - CROSS-ENCODER RERANKING")
+                            logger.info(f"{'─'*80}")
+                            chunks_only = [chunk for chunk, score in chunks_with_scores]
+                            logger.info(f"User {user_id}: Reranking parameters:")
+                            logger.info(f"User {user_id}:   - input_chunks: {len(chunks_only)}")
+                            logger.info(f"User {user_id}:   - reranker_model: BAAI/bge-reranker-base")
+                            logger.info(f"User {user_id}:   - final_top_k: {RAG_FINAL_TOP_K}")
+                            logger.info(f"User {user_id}:   - query: '{user_message}'")
+
+                            try:
+                                reranked_chunks = await self.reranker.rerank(
+                                    query=user_message,
+                                    chunks=chunks_only,
+                                    top_k=RAG_FINAL_TOP_K
+                                )
+                                logger.info(f"User {user_id}: ✓ Reranking complete")
+                                logger.info(f"User {user_id}: Output: {len(reranked_chunks)} chunks selected")
+
+                                logger.info(f"\nUser {user_id}: Reranking Results (final selection):")
+                                for i, chunk in enumerate(reranked_chunks, 1):
+                                    logger.info(f"\n  User {user_id}: [{i}] Final Rank: {i}/{len(reranked_chunks)}")
+                                    logger.info(f"      User {user_id}: Chunk Length: {len(chunk)} chars")
+                                    logger.info(f"      User {user_id}: Chunk Preview (first 150 chars):")
+                                    chunk_preview = chunk[:150].replace('\n', ' ')
+                                    logger.info(f"      User {user_id}: \"{chunk_preview}...\"")
+                                    logger.info(f"      User {user_id}: Full Chunk Text:")
+                                    for line in chunk.split('\n')[:5]:  # First 5 lines
+                                        logger.info(f"      User {user_id}: | {line}")
+                                    if len(chunk.split('\n')) > 5:
+                                        logger.info(f"      User {user_id}: | ... ({len(chunk.split('\n')) - 5} more lines)")
+
+                            except RuntimeError as e:
+                                logger.error(f"\n{'─'*80}")
+                                logger.error(f"User {user_id}: ✗ RERANKING FAILED")
+                                logger.error(f"{'─'*80}")
+                                logger.error(f"User {user_id}: Error: {e}")
+                                logger.error(f"User {user_id}: Falling back to FAISS ranking (top-{RAG_FINAL_TOP_K})")
+                                logger.error(f"{'─'*80}\n")
+                                # Fallback: use FAISS ranking
+                                reranked_chunks = chunks_only[:RAG_FINAL_TOP_K]
+
+                                logger.info(f"User {user_id}: Fallback chunks (FAISS order):")
+                                for i, chunk in enumerate(reranked_chunks, 1):
+                                    chunk_preview = chunk[:100].replace('\n', ' ')
+                                    logger.info(f"  User {user_id}: [{i}] {chunk_preview}...")
+
+                            # STEP 4: Format augmented query
+                            logger.info(f"\n{'─'*80}")
+                            logger.info(f"User {user_id}: STEP 4 - QUERY AUGMENTATION")
+                            logger.info(f"{'─'*80}")
+                            context = " ".join([f"[[{chunk}]]" for chunk in reranked_chunks])
+                            query_to_send = f"Context: {context}\n\nQuery: [[{user_message}]]"
+
+                            logger.info(f"User {user_id}: Augmentation statistics:")
+                            logger.info(f"User {user_id}:   - original_query_length: {len(user_message)} chars")
+                            logger.info(f"User {user_id}:   - context_length: {len(context)} chars")
+                            logger.info(f"User {user_id}:   - augmented_query_length: {len(query_to_send)} chars")
+                            logger.info(f"User {user_id}:   - context_chunks: {len(reranked_chunks)}")
+                            logger.info(f"User {user_id}:   - expansion_ratio: {len(query_to_send)/len(user_message):.2f}x")
+
+                            logger.info(f"\nUser {user_id}: Augmented Query Preview (first 500 chars):")
+                            logger.info(f"{query_to_send[:500]}...")
+
+                            logger.info(f"\nUser {user_id}: Full Augmented Query:")
+                            logger.info(f"{'─'*80}")
+                            logger.info(query_to_send)
+                            logger.info(f"{'─'*80}")
+
+                        # RAG pipeline completion summary
+                        logger.info(f"\n{'='*80}")
+                        logger.info(f"User {user_id}: RAG PIPELINE COMPLETED SUCCESSFULLY")
+                        logger.info(f"{'='*80}")
+                        logger.info(f"User {user_id}: Pipeline Summary:")
+                        logger.info(f"User {user_id}:   ✓ Step 1: Embedding generated ({len(query_embedding)} dims)")
+                        logger.info(f"User {user_id}:   ✓ Step 2: FAISS retrieved {len(chunks_with_scores)} chunks (filtered)")
+                        logger.info(f"User {user_id}:   ✓ Step 3: Reranked to {len(reranked_chunks)} final chunks")
+                        logger.info(f"User {user_id}:   ✓ Step 4: Query augmented ({len(query_to_send)} chars)")
+                        logger.info(f"User {user_id}: Ready to send to model")
+                        logger.info(f"{'='*80}\n")
 
                     except OllamaError as e:
-                        logger.error(f"User {user_id}: Failed to generate query embedding: {e}")
+                        logger.error(f"\n{'='*80}")
+                        logger.error(f"User {user_id}: RAG PIPELINE FAILED - Ollama Error")
+                        logger.error(f"{'='*80}")
+                        logger.error(f"User {user_id}: Error: {e}")
+                        logger.error(f"User {user_id}: Falling back to standard query (no RAG context)")
+                        logger.error(f"{'='*80}\n")
                         # Fall back to standard query
                         query_to_send = user_message
-                        logger.warning(f"User {user_id}: Falling back to standard query due to Ollama error")
                     except Exception as e:
-                        logger.error(f"User {user_id}: Error during RAG processing: {e}", exc_info=True)
+                        logger.error(f"\n{'='*80}")
+                        logger.error(f"User {user_id}: RAG PIPELINE FAILED - Unexpected Error")
+                        logger.error(f"{'='*80}")
+                        logger.error(f"User {user_id}: Error: {e}", exc_info=True)
+                        logger.error(f"User {user_id}: Falling back to standard query (no RAG context)")
+                        logger.error(f"{'='*80}\n")
                         # Fall back to standard query
                         query_to_send = user_message
-                        logger.warning(f"User {user_id}: Falling back to standard query due to error")
                 else:
-                    logger.warning(f"User {user_id}: RAG enabled but no FAISS index found, sending standard query")
+                    logger.warning(f"\n{'='*80}")
+                    logger.warning(f"User {user_id}: RAG ENABLED BUT NO FAISS INDEX FOUND")
+                    logger.warning(f"{'='*80}")
+                    logger.warning(f"User {user_id}: FAISS index does not exist at expected location")
+                    logger.warning(f"User {user_id}: Use /docs_embed to create index first")
+                    logger.warning(f"User {user_id}: Sending standard query (no RAG context)")
+                    logger.warning(f"{'='*80}\n")
 
             # Log the final query being sent to model
             if query_to_send != user_message:

@@ -27,6 +27,12 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = "nomic-embed-text"
 DOCS_FOLDER = str(Path(__file__).parent.parent / "docs")
 
+# RAG Configuration
+RERANKER_MODEL = "bge-reranker-base"  # Ollama reranker model
+SIMILARITY_THRESHOLD = 0.71  # Minimum cosine similarity for chunks
+RAG_RETRIEVAL_TOP_K = 10  # Initial retrieval from FAISS
+RAG_FINAL_TOP_K = 3  # Final chunks sent to model after reranking
+
 # MCP Server Paths (legacy - kept for backward compatibility)
 MCP_TASKS_SERVER_PATH = Path(__file__).parent.parent / "mcp_tasks" / "server.py"
 MCP_FACTS_SERVER_PATH = Path(__file__).parent.parent / "mcp_facts" / "server.py"
