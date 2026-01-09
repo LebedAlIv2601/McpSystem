@@ -374,6 +374,7 @@ class TelegramBot:
 
             # Check if RAG is enabled for this user
             query_to_send = user_message
+            rag_sources = []  # Will be populated if RAG is used
             if self.rag_state_manager.is_enabled(user_id):
                 logger.info(f"\n{'='*80}")
                 logger.info(f"User {user_id}: RAG PIPELINE STARTED")
@@ -421,10 +422,17 @@ class TelegramBot:
                         logger.info(f"User {user_id}: Retrieved chunks: {len(chunks_with_scores)} (after filtering)")
                         logger.info(f"User {user_id}: Chunks that passed threshold: {len(chunks_with_scores)}/{RAG_RETRIEVAL_TOP_K}")
 
+                        # Build chunk -> (filename, preview) mapping for sources
+                        chunk_to_source = {}
                         if chunks_with_scores:
                             logger.info(f"\nUser {user_id}: FAISS Results (with scores):")
-                            for i, (chunk, score) in enumerate(chunks_with_scores, 1):
+                            for i, (chunk, score, filename) in enumerate(chunks_with_scores, 1):
+                                # Store mapping for later source attribution
+                                chunk_preview_short = chunk[:20].replace('\n', ' ')
+                                chunk_to_source[chunk] = (filename, chunk_preview_short)
+
                                 logger.info(f"\n  User {user_id}: [{i}] FAISS Rank: {i}/{len(chunks_with_scores)}")
+                                logger.info(f"      User {user_id}: Filename: {filename}")
                                 logger.info(f"      User {user_id}: Similarity Score: {score:.6f}")
                                 logger.info(f"      User {user_id}: Chunk Length: {len(chunk)} chars")
                                 logger.info(f"      User {user_id}: Chunk Preview (first 150 chars):")
@@ -454,7 +462,7 @@ class TelegramBot:
                             logger.info(f"\n{'─'*80}")
                             logger.info(f"User {user_id}: STEP 3 - CROSS-ENCODER RERANKING")
                             logger.info(f"{'─'*80}")
-                            chunks_only = [chunk for chunk, score in chunks_with_scores]
+                            chunks_only = [chunk for chunk, score, filename in chunks_with_scores]
                             logger.info(f"User {user_id}: Reranking parameters:")
                             logger.info(f"User {user_id}:   - input_chunks: {len(chunks_only)}")
                             logger.info(f"User {user_id}:   - reranker_model: BAAI/bge-reranker-base")
@@ -520,6 +528,18 @@ class TelegramBot:
                             logger.info(query_to_send)
                             logger.info(f"{'─'*80}")
 
+                            # STEP 5: Collect sources for final response
+                            rag_sources = []
+                            seen_sources = set()
+                            for chunk in reranked_chunks:
+                                if chunk in chunk_to_source:
+                                    filename, preview = chunk_to_source[chunk]
+                                    source_key = (filename, preview)
+                                    if source_key not in seen_sources:
+                                        seen_sources.add(source_key)
+                                        rag_sources.append((filename, preview))
+                            logger.info(f"User {user_id}: Collected {len(rag_sources)} unique sources for response")
+
                         # RAG pipeline completion summary
                         logger.info(f"\n{'='*80}")
                         logger.info(f"User {user_id}: RAG PIPELINE COMPLETED SUCCESSFULLY")
@@ -577,12 +597,21 @@ class TelegramBot:
                 # Check if MCP indicator is present in response
                 mcp_indicator_present = MCP_USED_INDICATOR in response_text
 
-                # Store response WITHOUT indicator in conversation history
+                # Store response WITHOUT indicator and WITHOUT sources in conversation history
                 clean_response = response_text.replace(MCP_USED_INDICATOR, "").strip() if mcp_indicator_present else response_text
                 self.conversation_manager.add_message(user_id, "assistant", clean_response)
 
-                # Send full response with indicator to user
-                await retry_telegram_call(update.message.reply_text, response_text)
+                # Build sources section if RAG was used
+                response_to_send = response_text
+                if rag_sources:
+                    sources_section = "\n\nИсточники:"
+                    for filename, preview in rag_sources:
+                        sources_section += f"\n• {filename}: \"{preview}...\""
+                    response_to_send = response_text + sources_section
+                    logger.info(f"User {user_id}: Added {len(rag_sources)} sources to response")
+
+                # Send full response with indicator and sources to user
+                await retry_telegram_call(update.message.reply_text, response_to_send)
             else:
                 await retry_telegram_call(update.message.reply_text, ERROR_MESSAGE)
 

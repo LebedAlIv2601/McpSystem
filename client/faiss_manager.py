@@ -54,20 +54,22 @@ class FaissManager:
         norms = np.where(norms == 0, 1, norms)
         return vectors / norms
 
-    def create_index(self, embeddings: List[List[float]], texts: List[str]) -> None:
+    def create_index(self, embeddings: List[List[float]], texts: List[str], filenames: List[str]) -> None:
         """
         Create FAISS index from embeddings and save to disk
 
         Args:
             embeddings: List of embedding vectors
             texts: List of corresponding chunk texts
+            filenames: List of corresponding source filenames
 
         Raises:
-            ValueError: If embeddings and texts have different lengths
+            ValueError: If embeddings, texts, and filenames have different lengths
         """
-        if len(embeddings) != len(texts):
+        if len(embeddings) != len(texts) or len(embeddings) != len(filenames):
             raise ValueError(
-                f"Embeddings count ({len(embeddings)}) must match texts count ({len(texts)})"
+                f"Embeddings count ({len(embeddings)}) must match texts count ({len(texts)}) "
+                f"and filenames count ({len(filenames)})"
             )
 
         if len(embeddings) == 0:
@@ -91,8 +93,8 @@ class FaissManager:
         faiss.write_index(index, str(self.index_path))
         logger.info(f"Saved FAISS index to {self.index_path}")
 
-        # Save metadata
-        metadata = [{"text": text} for text in texts]
+        # Save metadata with filenames
+        metadata = [{"text": text, "filename": filename} for text, filename in zip(texts, filenames)]
         with open(self.metadata_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
         logger.info(f"Saved metadata to {self.metadata_path}")
@@ -139,7 +141,7 @@ class FaissManager:
         query_embedding: List[float],
         top_k: int = 3,
         similarity_threshold: float = 0.0
-    ) -> List[Tuple[str, float]]:
+    ) -> List[Tuple[str, float, str]]:
         """
         Search for top-k most similar chunks with optional similarity filtering
 
@@ -149,7 +151,7 @@ class FaissManager:
             similarity_threshold: Minimum cosine similarity score (0.0 to 1.0)
 
         Returns:
-            List of tuples (chunk_text, similarity_score) ordered by similarity (most similar first)
+            List of tuples (chunk_text, similarity_score, filename) ordered by similarity (most similar first)
             Only includes chunks with similarity >= similarity_threshold
 
         Raises:
@@ -182,10 +184,12 @@ class FaissManager:
         for i, (idx, score) in enumerate(zip(indices[0], distances[0]), 1):
             if idx < len(self.metadata):
                 text = self.metadata[idx]["text"]
+                filename = self.metadata[idx].get("filename", "unknown")
                 chunk_preview = text[:100].replace('\n', ' ')
                 status = "PASS" if score >= similarity_threshold else "FILTERED"
                 logger.info(f"\n  Result[{i}/{top_k}]:")
                 logger.info(f"    Index: {idx}")
+                logger.info(f"    Filename: {filename}")
                 logger.info(f"    Similarity Score: {score:.6f}")
                 logger.info(f"    Status: {status} (threshold: {similarity_threshold})")
                 logger.info(f"    Chunk Preview: \"{chunk_preview}...\"")
@@ -202,8 +206,9 @@ class FaissManager:
                 # Apply similarity threshold filter
                 if score >= similarity_threshold:
                     text = self.metadata[idx]["text"]
-                    results.append((text, float(score)))
-                    logger.info(f"  ✓ Chunk {i+1}/{top_k}: score={score:.6f} PASSED")
+                    filename = self.metadata[idx].get("filename", "unknown")
+                    results.append((text, float(score), filename))
+                    logger.info(f"  ✓ Chunk {i+1}/{top_k}: score={score:.6f} file={filename} PASSED")
                 else:
                     filtered_count += 1
                     logger.info(f"  ✗ Chunk {i+1}/{top_k}: score={score:.6f} FILTERED")
@@ -215,7 +220,7 @@ class FaissManager:
         logger.info(f"  Filtered out: {filtered_count}")
         logger.info(f"  Pass rate: {len(results)/top_k*100:.1f}%")
         if results:
-            scores = [score for _, score in results]
+            scores = [score for _, score, _ in results]
             logger.info(f"  Score range (passed): [{min(scores):.6f}, {max(scores):.6f}]")
             logger.info(f"  Mean score (passed): {sum(scores)/len(scores):.6f}")
         logger.info(f"{'─'*60}\n")

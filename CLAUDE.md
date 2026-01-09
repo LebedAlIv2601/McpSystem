@@ -634,9 +634,9 @@ The bot includes a RAG system that enhances AI responses with context from your 
 - **FAISS index** is created automatically by `/docs_embed` command
 - **sentence-transformers** library for cross-encoder reranking (`pip install sentence-transformers>=2.2.0`)
 
-### How RAG Works (4-Stage Pipeline)
+### How RAG Works (5-Stage Pipeline)
 
-The RAG system uses a sophisticated 4-stage retrieval pipeline with filtering and reranking:
+The RAG system uses a sophisticated 5-stage retrieval pipeline with filtering, reranking, and source attribution:
 
 **Stage 1: Query Embedding Generation**
 1. User enables RAG mode with `/rag true`
@@ -666,6 +666,17 @@ The RAG system uses a sophisticated 4-stage retrieval pipeline with filtering an
 14. Model generates response using both query and retrieved context
 15. Only the original user message (not augmented version) is stored in conversation history
 
+**Stage 5: Source Attribution**
+16. Sources are collected from reranked chunks (filename + first 20 characters)
+17. Duplicate sources (same filename AND chunk preview) are removed
+18. "Источники:" section is appended to the response:
+    ```
+    Источники:
+    • filename1.md: "First 20 characters..."
+    • filename2.md: "Another chunk previ..."
+    ```
+19. Sources are NOT stored in conversation history (only shown to user)
+
 ### RAG State Management
 
 - **Per-user state** - RAG mode is tracked separately for each user
@@ -674,12 +685,14 @@ The RAG system uses a sophisticated 4-stage retrieval pipeline with filtering an
 
 ### FAISS Index
 
-- **Storage location** - `client/faiss_index.bin` (FAISS binary) and `client/faiss_metadata.json` (chunk texts)
+- **Storage location** - `client/faiss_index.bin` (FAISS binary) and `client/faiss_metadata.json` (chunk texts + filenames)
+- **Metadata structure** - `[{"text": "chunk content", "filename": "source.md"}, ...]`
 - **Index type** - `IndexFlatIP` (Inner Product) with normalized vectors for cosine similarity
 - **Similarity metric** - Cosine similarity (values from -1 to 1, where 1 = identical)
 - **Top-k retrieval** - Retrieves top-10 chunks (configurable via `RAG_RETRIEVAL_TOP_K`)
 - **Similarity threshold** - Filters chunks with cosine similarity < 0.71 (configurable via `SIMILARITY_THRESHOLD`)
 - **Regeneration** - Index is overwritten each time `/docs_embed` is called
+- **Migration note** - After updating to v2.4, run `/docs_embed` to rebuild index with filename metadata
 
 ### RAG Commands
 
@@ -721,6 +734,10 @@ User: How does the task monitoring system work?
 Bot: Думаю...
 Bot: Based on the documentation, the task monitoring system works as follows:
 [Detailed answer using context from docs/]
+
+Источники:
+• architecture.md: "The task monitoring..."
+• scheduler.md: "Periodic task fetch..."
 ```
 
 ### RAG Behavior
@@ -733,6 +750,9 @@ Bot: Based on the documentation, the task monitoring system works as follows:
 - Chunks are prepended to user query
 - AI model receives both context and query
 - Responses are more accurate and contextual
+- **Sources are automatically appended** to the response with filename and chunk preview
+- Sources are deduplicated (same filename + preview removed)
+- Sources are NOT stored in conversation history
 
 **When RAG is disabled:**
 - Bot sends queries directly to AI model
@@ -778,7 +798,7 @@ Bot: Based on the documentation, the task monitoring system works as follows:
 
 ### Logging
 
-**Comprehensive 4-Stage Pipeline Logging:**
+**Comprehensive 5-Stage Pipeline Logging:**
 
 The RAG system includes detailed logging for each pipeline stage with actual data:
 
@@ -809,9 +829,15 @@ The RAG system includes detailed logging for each pipeline stage with actual dat
 - Expansion ratio
 - Full augmented query text
 
+**Stage 5 - Source Attribution:**
+- Number of unique sources collected
+- Source filenames and chunk previews (20 chars)
+- Deduplication results
+
 **Pipeline Completion:**
-- Summary of all 4 stages
+- Summary of all 5 stages
 - Chunk counts at each stage
+- Sources count
 - Ready-to-send status
 
 **Logging levels:**

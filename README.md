@@ -39,11 +39,13 @@ This system integrates three specialized MCP servers with a Telegram bot powered
 - Generate vector embeddings from markdown files
 - Uses local Ollama with nomic-embed-text model (768 dimensions)
 - Paragraph-based chunking for optimal embedding quality
-- **RAG (Retrieval Augmented Generation)** - 4-stage pipeline for context-aware responses:
+- **RAG (Retrieval Augmented Generation)** - 5-stage pipeline for context-aware responses:
   1. Query embedding generation (Ollama)
   2. FAISS vector search (top-10) + similarity filtering (≥0.71)
   3. Cross-encoder reranking (BGE reranker model)
   4. Query augmentation with top-3 reranked chunks
+  5. Source attribution with filename and chunk preview
+- **Source citations** - Automatic "Источники:" section with document references
 - Per-user RAG mode toggle with persistent state
 - Comprehensive logging for all pipeline stages
 - Automatic fallback handling for robustness
@@ -268,6 +270,15 @@ pkill -9 -f "Python main.py"
 - **Android Platform Tools (adb)** - Device communication
 
 ## Recent Updates
+
+### v2.4 - RAG Source Citations
+- ✅ Added automatic source attribution for RAG responses
+- ✅ "Источники:" section appended to responses when RAG is used
+- ✅ Source format: `filename: "first 20 characters..."`
+- ✅ Deduplication: removes duplicate (filename + chunk preview) pairs
+- ✅ Sources NOT stored in conversation history (clean context)
+- ✅ Updated FAISS metadata to include source filenames
+- ✅ Backward compatible: requires `/docs_embed` to rebuild index with new metadata
 
 ### v2.3 - RAG Enhancement: Reranking & Filtering Pipeline
 - ✅ Added 4-stage RAG pipeline for improved retrieval accuracy

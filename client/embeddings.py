@@ -131,7 +131,8 @@ async def process_docs_folder(docs_path: str, ollama_url: str, model: str = "nom
                 # Add to results
                 all_embeddings.append({
                     "text": chunk,
-                    "embedding": embedding
+                    "embedding": embedding,
+                    "filename": filename
                 })
 
             except OllamaError as e:
@@ -173,7 +174,7 @@ def create_faiss_index(embeddings: List[Dict]) -> None:
     Overwrites existing index if present.
 
     Args:
-        embeddings: List of embedding dictionaries with 'text' and 'embedding' keys
+        embeddings: List of embedding dictionaries with 'text', 'embedding', and 'filename' keys
 
     Raises:
         ValueError: If embeddings is empty or malformed
@@ -181,12 +182,13 @@ def create_faiss_index(embeddings: List[Dict]) -> None:
     if not embeddings:
         raise ValueError("Cannot create FAISS index from empty embeddings")
 
-    # Extract vectors and texts
+    # Extract vectors, texts, and filenames
     vectors = [item["embedding"] for item in embeddings]
     texts = [item["text"] for item in embeddings]
+    filenames = [item["filename"] for item in embeddings]
 
     # Create FAISS index
     faiss_manager = FaissManager()
-    faiss_manager.create_index(vectors, texts)
+    faiss_manager.create_index(vectors, texts, filenames)
 
     logger.info(f"Created FAISS index with {len(embeddings)} chunks")
