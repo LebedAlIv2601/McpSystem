@@ -101,6 +101,9 @@ class OpenRouterClient:
 
             response_text = message.get("content")
             tool_calls = message.get("tool_calls")
+            finish_reason = choice.get("finish_reason")
+
+            logger.info(f"OpenRouter response: finish_reason={finish_reason}, has_content={response_text is not None and len(response_text) > 0 if response_text else False}, has_tool_calls={tool_calls is not None}")
 
             if tool_calls:
                 logger.info(f"OpenRouter returned {len(tool_calls)} tool calls")

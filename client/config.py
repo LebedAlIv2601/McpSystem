@@ -20,7 +20,9 @@ if not OPENROUTER_API_KEY:
     raise ValueError("OPENROUTER_API_KEY not found in .env file")
 
 # OpenRouter Configuration
-OPENROUTER_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free"
+# OPENROUTER_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free"
+OPENROUTER_MODEL = "deepseek/deepseek-v3.2"
+# OPENROUTER_MODEL = "x-ai/grok-code-fast-1"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # GitHub Repository Configuration
@@ -83,3 +85,25 @@ MCP_USED_INDICATOR = "\n\n✓ MCP was used"
 ERROR_MESSAGE = "Sorry, something went wrong. Please try again."
 
 TOOL_CALL_TIMEOUT = 120.0
+
+# Essential tools filter - only these tools will be sent to the model
+# Reduces token usage from ~7000 to ~1000 tokens
+ESSENTIAL_TOOLS = [
+    # RAG MCP - project structure (use first!)
+    "get_project_structure",
+    # GitHub Copilot MCP - file operations
+    "get_file_contents",
+    # GitHub Copilot MCP - commits
+    "list_commits",
+    "get_commit",
+    # GitHub Copilot MCP - issues
+    "list_issues",
+    "issue_read",
+    # GitHub Copilot MCP - pull requests
+    "list_pull_requests",
+    "pull_request_read",
+    # RAG MCP - documentation
+    "rag_query",
+    "list_specs",
+    "get_spec_content",
+]

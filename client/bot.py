@@ -14,7 +14,8 @@ from config import (
     TELEGRAM_BOT_TOKEN,
     WELCOME_MESSAGE,
     ERROR_MESSAGE,
-    MCP_USED_INDICATOR
+    MCP_USED_INDICATOR,
+    ESSENTIAL_TOOLS
 )
 from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
@@ -51,7 +52,17 @@ class TelegramBot:
     def initialize(self) -> None:
         """Initialize bot with MCP tools."""
         mcp_tools = self.mcp_manager.get_tools()
-        self.openrouter_tools = self.openrouter_client.convert_mcp_tools_to_openrouter(mcp_tools)
+
+        # Log all available tools from MCP
+        logger.info(f"=== ALL MCP TOOLS ({len(mcp_tools)}) ===")
+        for tool in mcp_tools:
+            logger.info(f"  - {tool['name']}: {tool.get('description', '')[:80]}...")
+
+        # Filter to essential tools only to reduce token usage
+        filtered_tools = [t for t in mcp_tools if t["name"] in ESSENTIAL_TOOLS]
+        logger.info(f"Filtered tools: {len(filtered_tools)}/{len(mcp_tools)} (saved ~{(len(mcp_tools) - len(filtered_tools)) * 60} tokens)")
+
+        self.openrouter_tools = self.openrouter_client.convert_mcp_tools_to_openrouter(filtered_tools)
         logger.info(f"Bot initialized with {len(self.openrouter_tools)} tools")
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -111,34 +122,28 @@ class TelegramBot:
 
         system_prompt = {
             "role": "system",
-            "content": f"""Current date: {current_date}. All dates must be calculated relative to this date.
+            "content": f"""Current date: {current_date}.
 
-You are a project consultant for the EasyPomodoro Android application (repository: LebedAlIv2601/EasyPomodoro).
+You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/EasyPomodoro).
 
-You have access to TWO MCP servers:
+**TOOLS:**
 
-1. **GitHub MCP Server** (100+ tools) - for working with GitHub repository:
-   - get_file_contents: Read file contents from the repository
-   - search_code: Search for code in the repository
-   - list_commits: View commit history
-   - get_issue / list_issues: Work with issues
-   - get_pull_request / list_pull_requests: Work with PRs
-   - And many more tools for repository management
+1. **get_project_structure** - Get directory tree. USE FIRST to find file paths!
+   Example: get_project_structure(path="app/src/main/java", max_depth=4)
 
-2. **RAG MCP Server** - for searching project documentation in /specs folder:
-   - rag_query: Semantic search in documentation
-   - list_specs: List all spec files
-   - get_spec_content: Get full content of a spec file
-   - rebuild_index: Rebuild the search index
+2. **get_file_contents** - Read file content (use exact path from structure)
+   Example: get_file_contents(owner="LebedAlIv2601", repo="EasyPomodoro", path="app/.../MainActivity.kt")
 
-**Strategy for answering questions:**
-1. For architecture/feature questions → use rag_query first to search documentation
-2. For code-specific questions → use get_file_contents or search_code from GitHub MCP
-3. Combine both sources for comprehensive answers
-4. Always specify owner="LebedAlIv2601" and repo="EasyPomodoro" when using GitHub tools
+3. **rag_query** - Search project documentation
 
-Respond in the same language as the user's question.
-Be specific and reference actual files/code when possible."""
+4. **list_commits**, **list_issues**, **list_pull_requests** - GitHub items
+
+**WORKFLOW:**
+1. For code → get_project_structure to find paths → get_file_contents to read
+2. For architecture → rag_query
+3. ALWAYS provide complete answer after using tools
+
+Respond in user's language."""
         }
 
         messages_with_system = [system_prompt] + conversation_history
@@ -147,23 +152,38 @@ Be specific and reference actual files/code when possible."""
         tool_choice = "auto" if self.openrouter_tools else None
 
         try:
-            max_iterations = 15
+            max_iterations = 5
             iteration = 0
             current_messages = messages_with_system
             response_text = None
+            accumulated_content = []  # Collect content from all iterations
 
             while iteration < max_iterations:
                 iteration += 1
                 logger.info(f"User {user_id}: Tool call iteration {iteration}/{max_iterations}")
 
+                # On last iteration, disable tools to force final response
+                is_last_iteration = (iteration == max_iterations)
+                current_tools = None if is_last_iteration else self.openrouter_tools
+                current_tool_choice = None if is_last_iteration else tool_choice
+
                 response_text, tool_calls = await self.openrouter_client.chat_completion(
                     messages=current_messages,
-                    tools=self.openrouter_tools if self.openrouter_tools else None,
-                    tool_choice=tool_choice
+                    tools=current_tools if current_tools else None,
+                    tool_choice=current_tool_choice
                 )
+
+                # Accumulate non-empty content
+                if response_text:
+                    accumulated_content.append(response_text)
 
                 if not tool_calls:
                     logger.info(f"User {user_id}: No tool calls in iteration {iteration}, finishing")
+                    # Use accumulated content if final response is empty
+                    if not response_text and accumulated_content:
+                        response_text = accumulated_content[-1]  # Use last non-empty
+                        logger.info(f"User {user_id}: Using accumulated content")
+                    logger.info(f"User {user_id}: Final response_text: {response_text[:200] if response_text else 'None'}")
                     break
 
                 logger.info(f"User {user_id}: Processing {len(tool_calls)} tool calls")
@@ -200,19 +220,24 @@ Be specific and reference actual files/code when possible."""
                             "content": json.dumps({"error": str(e)})
                         })
 
-                conversation_with_tools = conversation_history.copy()
+                # Add assistant message with tool_calls for proper API format
+                assistant_msg = {"role": "assistant", "content": response_text or ""}
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": json.dumps(tc["arguments"])
+                        }
+                    }
+                    for tc in tool_calls
+                ]
+                current_messages.append(assistant_msg)
 
-                for msg in current_messages[1:]:
-                    if msg["role"] in ["assistant", "tool"]:
-                        conversation_with_tools.append(msg)
-
-                if response_text:
-                    conversation_with_tools.append({"role": "assistant", "content": response_text})
-
+                # Add tool results
                 for tr in tool_results:
-                    conversation_with_tools.append(tr)
-
-                current_messages = [system_prompt] + conversation_with_tools
+                    current_messages.append(tr)
 
             if response_text and mcp_was_used:
                 response_text += MCP_USED_INDICATOR

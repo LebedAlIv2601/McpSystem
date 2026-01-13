@@ -1,333 +1,271 @@
-# Multi-MCP Telegram Bot System
+# EasyPomodoro Project Consultant Bot
 
-AI-powered Telegram bot with task management and mobile automation via multiple MCP (Model Context Protocol) servers.
+Telegram bot for consulting on the EasyPomodoro Android project using MCP (Model Context Protocol) servers.
 
-## Overview
+## Project Overview
 
-This system integrates three specialized MCP servers with a Telegram bot powered by OpenRouter AI, providing a unified conversational interface for:
-- **Task Management** - Weeek task tracker integration
-- **Information** - Random facts generator
-- **Mobile Automation** - Android/iOS device control
-
-## Features
-
-### 🤖 AI-Powered Telegram Bot
-- Natural language interface via OpenRouter (deepseek-v3.1)
-- Supports up to 15 chained tool calls per conversation
-- Per-user conversation history (max 50 messages)
-- Real-time "Думаю..." thinking indicator
-- Automatic MCP usage indicator
-
-### 📋 Task Management (Weeek MCP)
-- Retrieve tasks with states: Backlog, In Progress, Done
-- Periodic task monitoring (every 30 seconds)
-- AI-generated summaries every 2 minutes
-- User subscription management for summaries
-
-### 📱 Mobile Automation (mobile-mcp)
-19 tools for comprehensive mobile device control:
-- Device & app management
-- Screen interaction (tap, swipe, type)
-- Screenshots and UI element listing
-- Hardware button simulation
-- Orientation control
-
-### 🎲 Random Facts (facts-mcp)
-- On-demand interesting facts via `/fact` command
-
-### 📄 Document Embeddings & RAG (Ollama + FAISS + Reranking)
-- Generate vector embeddings from markdown files
-- Uses local Ollama with nomic-embed-text model (768 dimensions)
-- Paragraph-based chunking for optimal embedding quality
-- **RAG (Retrieval Augmented Generation)** - 5-stage pipeline for context-aware responses:
-  1. Query embedding generation (Ollama)
-  2. FAISS vector search (top-10) + similarity filtering (≥0.71)
-  3. Cross-encoder reranking (BGE reranker model)
-  4. Query augmentation with top-3 reranked chunks
-  5. Source attribution with filename and chunk preview
-- **Source citations** - Automatic "Источники:" section with document references
-- Per-user RAG mode toggle with persistent state
-- Comprehensive logging for all pipeline stages
-- Automatic fallback handling for robustness
-- JSON output with timestamps for easy integration
+This system provides an AI-powered project consultant that can:
+1. Browse and analyze project code via GitHub Copilot MCP (HTTP transport)
+2. Search project documentation using RAG (Retrieval Augmented Generation)
+3. Explore project structure with tree navigation
 
 ## Architecture
 
 ```
-Telegram User
-    ↓
-Telegram Bot (Python) → OpenRouter AI (21 tools)
-    ↓
-MCP Manager (AsyncExitStack)
-    ├─→ Weeek Tasks MCP (Python)
-    ├─→ Random Facts MCP (Python)
-    └─→ Mobile MCP (Node.js/npx)
+┌─────────────┐
+│ Telegram    │
+│ User        │
+└──────┬──────┘
+       │
+       ↓
+┌─────────────────────────────────────────┐
+│ Telegram Bot (client/bot.py)           │
+│ - Handles user messages                 │
+│ - Manages conversation history          │
+│ - Shows "Думаю..." indicator            │
+│ - Filters tools to essential set        │
+└──────┬──────────────────────────────────┘
+       │
+       ↓
+┌─────────────────────────────────────────┐
+│ OpenRouter API                          │
+│ Model: deepseek/deepseek-v3.2           │
+│ - Processes natural language            │
+│ - Decides when to use tools             │
+└──────┬──────────────────────────────────┘
+       │ (when tool needed)
+       ↓
+┌─────────────────────────────────────────┐
+│ MCP Manager (mcp_manager.py)            │
+│ - Manages 2 MCP server connections      │
+│ - Routes tool calls to correct server   │
+│ - HTTP transport for GitHub Copilot     │
+│ - stdio transport for RAG MCP           │
+└──────┬──────────────────────────────────┘
+       │
+       ├───────────────────────────────────┐
+       ↓                                   ↓
+┌──────────────────────┐    ┌──────────────────────┐
+│ GitHub Copilot MCP   │    │ RAG Specs MCP        │
+│ (HTTP Transport)     │    │ (Python/stdio)       │
+│                      │    │                      │
+│ URL:                 │    │ Tools:               │
+│ api.githubcopilot.   │    │ - rag_query          │
+│ com/mcp/             │    │ - list_specs         │
+│                      │    │ - get_spec_content   │
+│ Essential Tools:     │    │ - rebuild_index      │
+│ - get_file_contents  │    │ - get_project_       │
+│ - list_commits       │    │   structure (tree)   │
+│ - get_commit         │    │                      │
+│ - list_issues        │    │ Uses:                │
+│ - issue_read         │    │ - GitHub API         │
+│ - list_pull_requests │    │ - FAISS + Ollama     │
+│ - pull_request_read  │    │                      │
+└──────────────────────┘    └──────────────────────┘
 ```
 
-## Prerequisites
+## System Components
 
-- **Python 3.14+**
-- **Node.js v22+** (for mobile-mcp)
-- **Android Platform Tools** (adb) for mobile automation
-- **Telegram Bot Token** (from @BotFather)
-- **OpenRouter API Key** (from openrouter.ai)
-- **Weeek API Token** (configured in mcp_tasks/weeek_api.py)
-- **Ollama with nomic-embed-text** (optional, for `/docs_embed` and RAG features)
-- **sentence-transformers** (optional, for RAG reranking - installs with PyTorch)
+### 1. MCP Servers
+
+#### 1.1 GitHub Copilot MCP (HTTP)
+
+**Purpose:** Provide access to GitHub repository via GitHub Copilot's MCP endpoint
+
+**URL:** `https://api.githubcopilot.com/mcp/`
+
+**Transport:** HTTP (Streamable HTTP transport, MCP spec 2025-03-26)
+
+**Essential Tools (filtered for token efficiency):**
+- `get_file_contents` - Read file contents from repository
+- `list_commits` / `get_commit` - View commit history
+- `list_issues` / `issue_read` - Work with issues
+- `list_pull_requests` / `pull_request_read` - Work with PRs
+
+**Note:** The server provides 40+ tools, but only essential ones are sent to the model to reduce token usage.
+
+**Authentication:** GitHub Personal Access Token (PAT)
+
+#### 1.2 RAG Specs MCP (Python)
+
+**Purpose:** Search project documentation using RAG and explore project structure
+
+**Location:** `mcp_rag/`
+
+**Files:**
+- `server.py` - MCP server with RAG tools
+- `github_fetcher.py` - GitHub API client for /specs folder and project structure
+- `rag_engine.py` - FAISS + Ollama embeddings
+
+**Tools:**
+- `rag_query` - Search documentation with semantic similarity
+- `list_specs` - List available specification files
+- `get_spec_content` - Get full content of a spec file
+- `rebuild_index` - Rebuild the RAG index
+- `get_project_structure` - Get directory tree (use FIRST to find file paths)
+
+**Target Repository:** `LebedAlIv2601/EasyPomodoro`
+**Specs Path:** `/specs`
+
+### 2. Telegram Bot Client (client/)
+
+**Files:**
+- `main.py` - Application entry point
+- `bot.py` - Telegram bot handlers with tool call loop
+- `mcp_manager.py` - MCP server management (HTTP + stdio)
+- `mcp_http_transport.py` - HTTP transport for GitHub Copilot MCP
+- `openrouter_client.py` - OpenRouter API integration
+- `conversation.py` - Per-user conversation history
+- `logger.py` - Logging configuration
+- `config.py` - Configuration, environment variables, and ESSENTIAL_TOOLS filter
 
 ## Installation
 
-### 1. Clone and Navigate
+### Prerequisites
+- Python 3.14+
+- Ollama with `nomic-embed-text` model (for RAG)
+- Telegram bot token
+- OpenRouter API key
+- GitHub Personal Access Token
+
+### Setup
+
+1. **Clone repository:**
 ```bash
 cd /path/to/McpSystem
 ```
 
-### 2. Install Node.js v22+ (if needed)
-```bash
-# Using nvm (recommended)
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-source ~/.zshrc  # or ~/.bashrc
-nvm install 22
-nvm use 22
-node --version  # Should show v22.x.x
-```
-
-### 3. Verify Android Platform Tools
-```bash
-adb --version  # Should show adb version
-```
-
-### 4. Setup Python Environment
+2. **Create virtual environment:**
 ```bash
 python3.14 -m venv venv
-source venv/bin/activate  # macOS/Linux
-pip install -r requirements.txt
-pip install -r client/requirements.txt
+source venv/bin/activate
 ```
 
-### 5. Configure Environment Variables
+3. **Install dependencies:**
+```bash
+pip install -r requirements.txt
+pip install -r mcp_rag/requirements.txt
+```
+
+4. **Install Ollama model (for RAG):**
+```bash
+ollama pull nomic-embed-text
+```
+
+5. **Configure environment:**
 ```bash
 cd client
 cp .env.example .env
-# Edit .env:
-# TELEGRAM_BOT_TOKEN=your_token_here
-# OPENROUTER_API_KEY=your_key_here
+# Edit .env with your credentials:
+# TELEGRAM_BOT_TOKEN=your_token
+# OPENROUTER_API_KEY=your_key
+# GITHUB_TOKEN=your_github_pat
 ```
 
-### 6. Install Ollama (Optional - for /docs_embed)
-```bash
-# Install Ollama (macOS/Linux)
-curl -fsSL https://ollama.com/install.sh | sh
+### GitHub PAT Scopes
 
-# Pull the nomic-embed-text model
-ollama pull nomic-embed-text
+Create a Classic PAT with these scopes:
+- `repo` - Full repository access
+- `read:org` - Read organization data (optional)
+- `read:user` - Read user data
 
-# Verify Ollama is running
-curl http://localhost:11434/api/tags
-```
+## Running
 
-## Running the System
-
-### macOS OpenMP Workaround (Required)
-Add environment variable to avoid OpenMP library conflicts:
-```bash
-echo 'export KMP_DUPLICATE_LIB_OK=TRUE' >> ~/.zshrc
-source ~/.zshrc
-```
-
-### Start All MCP Servers + Bot
 ```bash
 cd client
 ../venv/bin/python main.py
 ```
 
-**First run:**
-- May take 30-40 seconds while mobile-mcp downloads and initializes
-- BGE reranker model (~280MB) downloads automatically on first RAG query
-
-### Test Individual MCP Servers (Optional)
-```bash
-# Weeek Tasks
-python mcp_tasks/server.py
-
-# Random Facts
-python mcp_facts/server.py
-
-# Mobile MCP
-npx -y @mobilenext/mobile-mcp@latest
-```
+The bot will:
+1. Connect to GitHub Copilot MCP (HTTP)
+2. Start RAG Specs MCP server (Python/stdio)
+3. Fetch and filter tools to essential set (~12 tools)
+4. Start Telegram bot polling
 
 ## Usage
 
-### Telegram Commands
-- `/start` - Welcome message
-- `/tasks [query]` - Query Weeek tasks
-- `/fact` - Get random fact
-- `/rag [true|false|on|off]` - Toggle RAG mode for context-aware responses
-- `/docs_embed` - Generate embeddings and FAISS index from docs/ markdown files
-- `/subscribe` - Enable periodic task summaries
-- `/unsubscribe` - Disable summaries
+### Commands
 
-### Natural Language Examples
-```
-"List available Android devices"
-"Take a screenshot of the device"
-"Show me tasks in progress"
-"Launch Chrome and navigate to google.com"
-"What tasks are done?"
-```
+- `/start` - Show welcome message
 
-## System Configuration
+### Example Queries
 
-### client/config.py
-- `MAX_CONVERSATION_HISTORY` - Message limit per user (default: 50)
-- `TOOL_CALL_TIMEOUT` - MCP tool timeout (default: 30s)
-- `TASK_FETCH_INTERVAL` - Task monitoring interval (default: 30s)
-- `SUMMARY_INTERVAL` - Summary delivery interval (default: 120s)
-- `MCP_SERVERS` - List of MCP server configurations
+**Documentation questions:**
+- "What is the project architecture?"
+- "How does the timer feature work?"
+- "List all specification files"
 
-### client/bot.py
-- `max_iterations` - Max chained tool calls (default: 15)
+**Code questions:**
+- "Show me the main activity code"
+- "What files are in the app module?"
+- "Get project structure"
 
-## Project Statistics
+**GitHub questions:**
+- "Show recent commits"
+- "List open issues"
+- "What pull requests are pending?"
 
-- **Languages:** Python 3.14, Node.js v22+
-- **MCP Servers:** 3 (Weeek Tasks, Random Facts, Mobile MCP)
-- **Total Tools:** 21
-  - 1 task management (get_tasks)
-  - 1 information (get_fact)
-  - 19 mobile automation (mobile_*)
-- **API Integrations:** Telegram, OpenRouter, Weeek
-- **Transport:** stdio (MCP), HTTPS (APIs)
+### Recommended Workflow
 
-## Project Structure
+For code exploration, the model follows this workflow:
+1. `get_project_structure` - Find file paths first
+2. `get_file_contents` - Read specific files using exact paths
 
-```
-McpSystem/
-├── mcp_tasks/              # Weeek task tracker MCP server
-│   ├── server.py
-│   └── weeek_api.py
-├── mcp_facts/              # Random facts MCP server
-│   └── server.py
-├── client/                 # Telegram bot client
-│   ├── main.py            # Entry point
-│   ├── bot.py             # Bot handlers
-│   ├── mcp_manager.py     # Multi-MCP connection manager
-│   ├── openrouter_client.py
-│   ├── scheduler.py       # Periodic task monitoring
-│   ├── embeddings.py      # Document embeddings with Ollama
-│   ├── faiss_manager.py   # FAISS vector search for RAG
-│   ├── reranker.py        # Cross-encoder reranking (BGE model)
-│   ├── rag_state_manager.py  # Per-user RAG state persistence
-│   ├── config.py          # Configuration
-│   └── .env               # Credentials (not in git)
-├── CLAUDE.md              # Detailed documentation
-└── README.md              # This file
-```
+## Configuration
 
-## Troubleshooting
+### Environment Variables
 
-### Bot Conflict Error
-```
-Conflict: terminated by other getUpdates request
-```
-**Solution:** Only one bot instance can run at a time. Kill all instances:
-```bash
-pkill -9 -f "Python main.py"
-```
+| Variable | Description |
+|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token |
+| `OPENROUTER_API_KEY` | OpenRouter API key |
+| `GITHUB_TOKEN` | GitHub Personal Access Token |
 
-### Mobile MCP Connection Errors
-- Verify Node.js v22+: `node --version`
-- Verify adb: `adb --version`
-- Check device connected: `adb devices`
-- First run takes 30-40 seconds (downloading package)
+### config.py Settings
 
-### MCP Server Errors
-- Check logs for initialization errors
-- Verify all prerequisites installed
-- Ensure environment variables configured correctly
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `OPENROUTER_MODEL` | `deepseek/deepseek-v3.2` | AI model |
+| `GITHUB_OWNER` | `LebedAlIv2601` | Repository owner |
+| `GITHUB_REPO` | `EasyPomodoro` | Repository name |
+| `SPECS_PATH` | `specs` | Documentation folder |
+| `MAX_CONVERSATION_HISTORY` | 50 | Max messages per user |
+| `TOOL_CALL_TIMEOUT` | 120.0 | MCP tool timeout (seconds) |
+| `ESSENTIAL_TOOLS` | list | Tools to send to model (token optimization) |
 
 ## Technology Stack
 
-### MCP Servers
-- **MCP SDK (Python)** - Model Context Protocol implementation
-- **httpx** - Async HTTP client for Weeek API
-- **@mobilenext/mobile-mcp** - Node.js mobile automation
+- **Python 3.14** - Main language
+- **python-telegram-bot** - Telegram integration
+- **MCP SDK** - Model Context Protocol (HTTP + stdio transports)
+- **httpx** - Async HTTP client for GitHub Copilot MCP
+- **FAISS** - Vector similarity search
+- **Ollama** - Local embeddings (nomic-embed-text)
+- **OpenRouter** - AI model access
 
-### Client
-- **python-telegram-bot** - Telegram bot framework
-- **MCP SDK** - MCP client implementation
-- **httpx** - OpenRouter API client
-- **AsyncExitStack** - Multi-context manager for MCP connections
-- **FAISS** - Vector similarity search for RAG
-- **NumPy** - Vector operations and normalization
-- **sentence-transformers** - Cross-encoder reranking (BGE model)
-- **PyTorch** - Deep learning backend for reranking
+## Project Statistics
 
-### External Tools
-- **Node.js v22+** - Runtime for mobile-mcp
-- **npx** - Package runner
-- **Android Platform Tools (adb)** - Device communication
+- **MCP Servers:** 2
+  - GitHub Copilot MCP (HTTP, ~40 tools available, ~8 essential)
+  - RAG Specs MCP (Python/stdio, 5 tools)
+- **Essential Tools:** ~12 (filtered for token efficiency)
 
-## Recent Updates
+## Troubleshooting
 
-### v2.4 - RAG Source Citations
-- ✅ Added automatic source attribution for RAG responses
-- ✅ "Источники:" section appended to responses when RAG is used
-- ✅ Source format: `filename: "first 20 characters..."`
-- ✅ Deduplication: removes duplicate (filename + chunk preview) pairs
-- ✅ Sources NOT stored in conversation history (clean context)
-- ✅ Updated FAISS metadata to include source filenames
-- ✅ Backward compatible: requires `/docs_embed` to rebuild index with new metadata
+### GitHub Copilot MCP connection errors
+- Verify PAT has correct scopes (`repo`, `read:org`)
+- Check token is not expired
+- Ensure token is in `.env` file
+- Check network connectivity to api.githubcopilot.com
 
-### v2.3 - RAG Enhancement: Reranking & Filtering Pipeline
-- ✅ Added 4-stage RAG pipeline for improved retrieval accuracy
-- ✅ Stage 1: Query embedding generation with Ollama (768 dims)
-- ✅ Stage 2: FAISS retrieval (top-10) + cosine similarity filtering (≥0.71)
-- ✅ Stage 3: Cross-encoder reranking with BGE reranker model
-- ✅ Stage 4: Query augmentation with top-3 reranked chunks
-- ✅ Integrated sentence-transformers library for reranking
-- ✅ Added `reranker.py` module with lazy model initialization
-- ✅ Comprehensive logging for all 4 pipeline stages with data printing
-- ✅ Configurable thresholds and top-k values in config.py
-- ✅ Automatic fallback handling (reranking → FAISS → standard query)
-- ✅ Added OpenMP workaround for macOS (KMP_DUPLICATE_LIB_OK)
-- ✅ Updated documentation with detailed pipeline flow diagrams
+### RAG not working
+- Verify Ollama is running: `curl http://localhost:11434/api/tags`
+- Check nomic-embed-text model: `ollama list`
 
-### v2.2 - RAG (Retrieval Augmented Generation) System
-- ✅ Added `/rag` command for per-user RAG mode toggle
-- ✅ FAISS vector search integration (IndexFlatIP with cosine similarity)
-- ✅ Automatic context retrieval from document embeddings (top-3 chunks)
-- ✅ RAG-specific system prompt for context-aware AI responses
-- ✅ Per-user RAG state persistence across bot restarts
-- ✅ Comprehensive logging for embeddings, chunks, and augmented queries
-- ✅ Graceful fallback to standard mode on errors
-- ✅ Critical bug fix: Augmented queries now correctly sent to AI model
-- ✅ Enhanced `/docs_embed` to create FAISS index alongside JSON export
-
-### v2.1 - Document Embeddings Feature
-- ✅ Added `/docs_embed` command for generating vector embeddings
-- ✅ Integrated Ollama with nomic-embed-text model (768 dimensions)
-- ✅ Paragraph-based chunking for optimal embedding quality
-- ✅ JSON output with timestamps for easy integration
-- ✅ Comprehensive error handling and logging
-- ✅ Updated welcome message and documentation
-
-### v2.0 - Mobile Automation Integration
-- ✅ Added mobile-mcp server (19 Android/iOS automation tools)
-- ✅ Refactored MCP manager with AsyncExitStack for stable multi-server connections
-- ✅ Increased tool call iteration limit from 5 to 15
-- ✅ Fixed environment variable inheritance for Node.js processes
-- ✅ Updated documentation with mobile automation examples
-
-## Credits
-
-- [Weeek API](https://weeek.net/) - Task management data
-- [Anthropic](https://anthropic.com/) - MCP protocol specification
-- [OpenRouter](https://openrouter.ai/) - AI model access
-- [python-telegram-bot](https://python-telegram-bot.org/) - Telegram integration
-- [mobile-mcp](https://github.com/mobile-next/mobile-mcp) - Mobile automation capabilities
+### High token usage
+- Ensure `ESSENTIAL_TOOLS` filter is applied in config.py
+- Check logs for "Filtered tools: X/Y" message
 
 ## License
 
-This project demonstrates MCP integration with AI-powered conversational interfaces.
+This project demonstrates MCP integration for AI-powered project consultation.

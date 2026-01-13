@@ -108,7 +108,27 @@ async def list_tools() -> list[Tool]:
                 "properties": {},
                 "required": []
             }
-        )
+        ),
+        Tool(
+            name="get_project_structure",
+            description="Get the project directory structure as a tree. Use this FIRST to find file paths before using get_file_contents.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Starting path (e.g., 'app/src/main/java'). Empty for root.",
+                        "default": ""
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Max depth to traverse (default: 4)",
+                        "default": 4
+                    }
+                },
+                "required": []
+            }
+        ),
     ]
 
 
@@ -126,6 +146,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return await handle_get_spec_content(arguments)
         elif name == "rebuild_index":
             return await handle_rebuild_index()
+        elif name == "get_project_structure":
+            return await handle_get_project_structure(arguments)
         else:
             return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
     except Exception as e:
@@ -298,6 +320,25 @@ async def handle_rebuild_index() -> list[TextContent]:
             "success": False,
             "error": str(e)
         }))]
+
+
+async def handle_get_project_structure(arguments: dict) -> list[TextContent]:
+    """Handle get_project_structure tool call."""
+    path = arguments.get("path", "")
+    max_depth = arguments.get("max_depth", 4)
+
+    fetcher = get_github_fetcher()
+
+    try:
+        structure = await fetcher.get_directory_tree(path, max_depth)
+        response = {
+            "repository": f"{GITHUB_OWNER}/{GITHUB_REPO}",
+            "path": path or "/",
+            "structure": structure
+        }
+        return [TextContent(type="text", text=json.dumps(response, ensure_ascii=False, indent=2))]
+    except Exception as e:
+        return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
 
 async def main():

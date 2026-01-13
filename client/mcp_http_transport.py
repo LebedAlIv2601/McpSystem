@@ -257,7 +257,8 @@ class MCPHttpClient:
         )
 
         logger.info(f"=== HTTP MCP TOOL RESPONSE ===")
-        logger.debug(f"Raw result: {result}")
+        logger.info(f"Raw result type: {type(result)}, keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
+        logger.info(f"Raw result: {json.dumps(result, indent=2) if isinstance(result, dict) else result}"[:500])
 
         if result:
             # Handle content array format
@@ -265,8 +266,15 @@ class MCPHttpClient:
                 content_items = result["content"]
                 text_parts = []
                 for item in content_items:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        text_parts.append(item.get("text", ""))
+                    if isinstance(item, dict):
+                        item_type = item.get("type")
+                        if item_type == "text":
+                            text_parts.append(item.get("text", ""))
+                        elif item_type == "resource":
+                            # Extract actual file content from resource
+                            resource = item.get("resource", {})
+                            if "text" in resource:
+                                text_parts.append(resource["text"])
                 return {"result": "\n".join(text_parts) if text_parts else json.dumps(result)}
 
             return {"result": json.dumps(result) if isinstance(result, dict) else str(result)}

@@ -154,3 +154,54 @@ class GitHubFetcher:
         """Clear content cache."""
         self._cache.clear()
         logger.info("GitHub fetcher cache cleared")
+
+    async def get_directory_tree(self, path: str = "", max_depth: int = 4) -> str:
+        """
+        Get directory tree structure.
+
+        Args:
+            path: Starting path (empty for root)
+            max_depth: Maximum depth to traverse
+
+        Returns:
+            Tree structure as formatted string
+        """
+        client = await self._get_client()
+
+        async def fetch_dir(dir_path: str, depth: int, prefix: str = "") -> List[str]:
+            if depth > max_depth:
+                return [f"{prefix}... (max depth reached)"]
+
+            url = f"{GITHUB_API_BASE}/repos/{self.owner}/{self.repo}/contents/{dir_path}"
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+                contents = response.json()
+            except Exception as e:
+                return [f"{prefix}(error: {e})"]
+
+            if not isinstance(contents, list):
+                return [f"{prefix}{contents.get('name', 'file')}"]
+
+            lines = []
+            items = sorted(contents, key=lambda x: (x.get("type") != "dir", x.get("name", "")))
+
+            for i, item in enumerate(items):
+                is_last = i == len(items) - 1
+                connector = "└── " if is_last else "├── "
+                name = item.get("name", "")
+                item_type = item.get("type", "")
+
+                if item_type == "dir":
+                    lines.append(f"{prefix}{connector}{name}/")
+                    new_prefix = prefix + ("    " if is_last else "│   ")
+                    sub_lines = await fetch_dir(item.get("path", ""), depth + 1, new_prefix)
+                    lines.extend(sub_lines)
+                else:
+                    lines.append(f"{prefix}{connector}{name}")
+
+            return lines
+
+        tree_lines = await fetch_dir(path, 1)
+        root_name = path if path else f"{self.owner}/{self.repo}"
+        return f"{root_name}/\n" + "\n".join(tree_lines)

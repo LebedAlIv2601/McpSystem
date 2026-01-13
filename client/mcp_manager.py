@@ -190,7 +190,11 @@ class MCPManager:
                 result = await self._call_stdio_tool(server_name, tool_name, arguments)
 
             logger.info(f"=== MCP TOOL RESPONSE ===")
-            logger.info(f"Response length: {len(str(result))} chars")
+            result_str = str(result.get("result", result) if isinstance(result, dict) else result)
+            logger.info(f"Response length: {len(result_str)} chars")
+            # Log short responses (potential errors or empty results)
+            if len(result_str) < 200:
+                logger.info(f"Response content: {result_str}")
             return result
 
         except Exception as e:

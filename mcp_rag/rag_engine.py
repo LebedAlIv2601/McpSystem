@@ -195,6 +195,10 @@ class RAGEngine:
         # Search
         scores, indices = self.index.search(query_array, min(top_k * 2, len(self.metadata)))
 
+        # Log top scores for debugging
+        top_scores = [f"{s:.3f}" for s in scores[0][:5] if s > 0]
+        logger.info(f"Top similarity scores: {top_scores}, threshold: {threshold}")
+
         results = []
         for score, idx in zip(scores[0], indices[0]):
             if idx < 0 or idx >= len(self.metadata):

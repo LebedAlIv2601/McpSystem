@@ -5,8 +5,9 @@ Telegram bot for consulting on the EasyPomodoro Android project using MCP (Model
 ## Project Overview
 
 This system provides an AI-powered project consultant that can:
-1. Browse and analyze project code via GitHub MCP (100+ tools)
+1. Browse and analyze project code via GitHub Copilot MCP (HTTP transport)
 2. Search project documentation using RAG (Retrieval Augmented Generation)
+3. Explore project structure with tree navigation
 
 ## Architecture
 
@@ -22,12 +23,13 @@ This system provides an AI-powered project consultant that can:
 │ - Handles user messages                 │
 │ - Manages conversation history          │
 │ - Shows "Думаю..." indicator            │
+│ - Filters tools to essential set        │
 └──────┬──────────────────────────────────┘
        │
        ↓
 ┌─────────────────────────────────────────┐
 │ OpenRouter API                          │
-│ Model: nvidia/nemotron-3-nano-30b-a3b   │
+│ Model: deepseek/deepseek-v3.2           │
 │ - Processes natural language            │
 │ - Decides when to use tools             │
 └──────┬──────────────────────────────────┘
@@ -37,26 +39,28 @@ This system provides an AI-powered project consultant that can:
 │ MCP Manager (mcp_manager.py)            │
 │ - Manages 2 MCP server connections      │
 │ - Routes tool calls to correct server   │
-│ - All servers use stdio transport       │
+│ - HTTP transport for GitHub Copilot     │
+│ - stdio transport for RAG MCP           │
 └──────┬──────────────────────────────────┘
        │
        ├───────────────────────────────────┐
        ↓                                   ↓
 ┌──────────────────────┐    ┌──────────────────────┐
-│ GitHub MCP Server    │    │ RAG Specs MCP        │
-│ (Docker)             │    │ (Python)             │
+│ GitHub Copilot MCP   │    │ RAG Specs MCP        │
+│ (HTTP Transport)     │    │ (Python/stdio)       │
 │                      │    │                      │
-│ Image:               │    │ Tools:               │
-│ ghcr.io/github/      │    │ - rag_query          │
-│ github-mcp-server    │    │ - list_specs         │
+│ URL:                 │    │ Tools:               │
+│ api.githubcopilot.   │    │ - rag_query          │
+│ com/mcp/             │    │ - list_specs         │
 │                      │    │ - get_spec_content   │
-│ Tools: 100+          │    │ - rebuild_index      │
-│ - get_file_contents  │    │                      │
-│ - search_code        │    │ Uses:                │
-│ - list_commits       │    │ - GitHub API         │
-│ - list_issues        │    │ - FAISS + Ollama     │
-│ - list_pull_requests │    │                      │
-│ - And many more...   │    │                      │
+│ Essential Tools:     │    │ - rebuild_index      │
+│ - get_file_contents  │    │ - get_project_       │
+│ - list_commits       │    │   structure (tree)   │
+│ - get_commit         │    │                      │
+│ - list_issues        │    │ Uses:                │
+│ - issue_read         │    │ - GitHub API         │
+│ - list_pull_requests │    │ - FAISS + Ollama     │
+│ - pull_request_read  │    │                      │
 └──────────────────────┘    └──────────────────────┘
 ```
 
@@ -64,34 +68,33 @@ This system provides an AI-powered project consultant that can:
 
 ### 1. MCP Servers
 
-#### 1.1 GitHub MCP Server (Docker)
+#### 1.1 GitHub Copilot MCP (HTTP)
 
-**Purpose:** Provide access to GitHub repository (100+ tools)
+**Purpose:** Provide access to GitHub repository via GitHub Copilot's MCP endpoint
 
-**Image:** `ghcr.io/github/github-mcp-server`
+**URL:** `https://api.githubcopilot.com/mcp/`
 
-**Transport:** stdio (via Docker)
+**Transport:** HTTP (Streamable HTTP transport, MCP spec 2025-03-26)
 
-**Key Tools:**
+**Essential Tools (filtered for token efficiency):**
 - `get_file_contents` - Read file contents from repository
-- `search_code` - Search code in repository
-- `list_commits` - View commit history
-- `get_issue` / `list_issues` - Work with issues
-- `get_pull_request` / `list_pull_requests` - Work with PRs
-- `create_issue` / `create_pull_request` - Create issues/PRs
-- And 90+ more tools for complete GitHub integration
+- `list_commits` / `get_commit` - View commit history
+- `list_issues` / `issue_read` - Work with issues
+- `list_pull_requests` / `pull_request_read` - Work with PRs
+
+**Note:** The server provides 40+ tools, but only essential ones are sent to the model to reduce token usage.
 
 **Authentication:** GitHub Personal Access Token (PAT)
 
 #### 1.2 RAG Specs MCP (Python)
 
-**Purpose:** Search project documentation using RAG
+**Purpose:** Search project documentation using RAG and explore project structure
 
 **Location:** `mcp_rag/`
 
 **Files:**
 - `server.py` - MCP server with RAG tools
-- `github_fetcher.py` - GitHub API client for /specs folder
+- `github_fetcher.py` - GitHub API client for /specs folder and project structure
 - `rag_engine.py` - FAISS + Ollama embeddings
 
 **Tools:**
@@ -99,6 +102,7 @@ This system provides an AI-powered project consultant that can:
 - `list_specs` - List available specification files
 - `get_spec_content` - Get full content of a spec file
 - `rebuild_index` - Rebuild the RAG index
+- `get_project_structure` - Get directory tree (use FIRST to find file paths)
 
 **Target Repository:** `LebedAlIv2601/EasyPomodoro`
 **Specs Path:** `/specs`
@@ -107,18 +111,18 @@ This system provides an AI-powered project consultant that can:
 
 **Files:**
 - `main.py` - Application entry point
-- `bot.py` - Telegram bot handlers
-- `mcp_manager.py` - MCP server management (stdio only)
+- `bot.py` - Telegram bot handlers with tool call loop
+- `mcp_manager.py` - MCP server management (HTTP + stdio)
+- `mcp_http_transport.py` - HTTP transport for GitHub Copilot MCP
 - `openrouter_client.py` - OpenRouter API integration
 - `conversation.py` - Per-user conversation history
 - `logger.py` - Logging configuration
-- `config.py` - Configuration and environment variables
+- `config.py` - Configuration, environment variables, and ESSENTIAL_TOOLS filter
 
 ## Installation
 
 ### Prerequisites
 - Python 3.14+
-- Docker (for GitHub MCP server)
 - Ollama with `nomic-embed-text` model (for RAG)
 - Telegram bot token
 - OpenRouter API key
@@ -143,17 +147,12 @@ pip install -r requirements.txt
 pip install -r mcp_rag/requirements.txt
 ```
 
-4. **Pull Docker image:**
-```bash
-docker pull ghcr.io/github/github-mcp-server
-```
-
-5. **Install Ollama model (for RAG):**
+4. **Install Ollama model (for RAG):**
 ```bash
 ollama pull nomic-embed-text
 ```
 
-6. **Configure environment:**
+5. **Configure environment:**
 ```bash
 cd client
 cp .env.example .env
@@ -178,12 +177,10 @@ cd client
 ```
 
 The bot will:
-1. Start GitHub MCP server (Docker container)
-2. Start RAG Specs MCP server (Python)
-3. Fetch available tools from both servers (100+ total)
+1. Connect to GitHub Copilot MCP (HTTP)
+2. Start RAG Specs MCP server (Python/stdio)
+3. Fetch and filter tools to essential set (~12 tools)
 4. Start Telegram bot polling
-
-**Note:** First run may take longer while Docker pulls the image.
 
 ## Usage
 
@@ -200,13 +197,19 @@ The bot will:
 
 **Code questions:**
 - "Show me the main activity code"
-- "Search for timer implementation"
 - "What files are in the app module?"
+- "Get project structure"
 
 **GitHub questions:**
 - "Show recent commits"
 - "List open issues"
 - "What pull requests are pending?"
+
+### Recommended Workflow
+
+For code exploration, the model follows this workflow:
+1. `get_project_structure` - Find file paths first
+2. `get_file_contents` - Read specific files using exact paths
 
 ## Configuration
 
@@ -222,19 +225,20 @@ The bot will:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `OPENROUTER_MODEL` | `nvidia/nemotron-3-nano-30b-a3b:free` | AI model |
+| `OPENROUTER_MODEL` | `deepseek/deepseek-v3.2` | AI model |
 | `GITHUB_OWNER` | `LebedAlIv2601` | Repository owner |
 | `GITHUB_REPO` | `EasyPomodoro` | Repository name |
 | `SPECS_PATH` | `specs` | Documentation folder |
 | `MAX_CONVERSATION_HISTORY` | 50 | Max messages per user |
 | `TOOL_CALL_TIMEOUT` | 120.0 | MCP tool timeout (seconds) |
+| `ESSENTIAL_TOOLS` | list | Tools to send to model (token optimization) |
 
 ## Technology Stack
 
 - **Python 3.14** - Main language
-- **Docker** - GitHub MCP server container
 - **python-telegram-bot** - Telegram integration
-- **MCP SDK** - Model Context Protocol
+- **MCP SDK** - Model Context Protocol (HTTP + stdio transports)
+- **httpx** - Async HTTP client for GitHub Copilot MCP
 - **FAISS** - Vector similarity search
 - **Ollama** - Local embeddings (nomic-embed-text)
 - **OpenRouter** - AI model access
@@ -242,29 +246,25 @@ The bot will:
 ## Project Statistics
 
 - **MCP Servers:** 2
-  - GitHub MCP (Docker, 100+ tools)
-  - RAG Specs MCP (Python, 4 tools)
-- **Total MCP Tools:** 100+
+  - GitHub Copilot MCP (HTTP, ~40 tools available, ~8 essential)
+  - RAG Specs MCP (Python/stdio, 5 tools)
+- **Essential Tools:** ~12 (filtered for token efficiency)
 
 ## Troubleshooting
 
-### Docker not starting
-```bash
-# Check Docker is running
-docker ps
-
-# Pull image manually
-docker pull ghcr.io/github/github-mcp-server
-```
-
-### GitHub authentication errors
+### GitHub Copilot MCP connection errors
 - Verify PAT has correct scopes (`repo`, `read:org`)
 - Check token is not expired
 - Ensure token is in `.env` file
+- Check network connectivity to api.githubcopilot.com
 
 ### RAG not working
 - Verify Ollama is running: `curl http://localhost:11434/api/tags`
 - Check nomic-embed-text model: `ollama list`
+
+### High token usage
+- Ensure `ESSENTIAL_TOOLS` filter is applied in config.py
+- Check logs for "Filtered tools: X/Y" message
 
 ## License
 
