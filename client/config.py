@@ -11,6 +11,7 @@ load_dotenv(dotenv_path=env_path)
 # Load credentials from environment variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
 # Validate required environment variables
 if not TELEGRAM_BOT_TOKEN:
@@ -18,66 +19,67 @@ if not TELEGRAM_BOT_TOKEN:
 if not OPENROUTER_API_KEY:
     raise ValueError("OPENROUTER_API_KEY not found in .env file")
 
-OPENROUTER_MODEL = "nex-agi/deepseek-v3.1-nex-n1:free"
-
+# OpenRouter Configuration
+OPENROUTER_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Ollama Configuration
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "nomic-embed-text"
-DOCS_FOLDER = str(Path(__file__).parent.parent / "docs")
+# GitHub Repository Configuration
+GITHUB_OWNER = "LebedAlIv2601"
+GITHUB_REPO = "EasyPomodoro"
+SPECS_PATH = "specs"
 
-# RAG Configuration
-RERANKER_MODEL = "bge-reranker-base"  # Ollama reranker model
-SIMILARITY_THRESHOLD = 0.71  # Minimum cosine similarity for chunks
-RAG_RETRIEVAL_TOP_K = 10  # Initial retrieval from FAISS
-RAG_FINAL_TOP_K = 3  # Final chunks sent to model after reranking
+# GitHub Copilot MCP Configuration
+GITHUB_COPILOT_MCP_URL = "https://api.githubcopilot.com/mcp/"
 
-# MCP Server Paths (legacy - kept for backward compatibility)
-MCP_TASKS_SERVER_PATH = Path(__file__).parent.parent / "mcp_tasks" / "server.py"
-MCP_FACTS_SERVER_PATH = Path(__file__).parent.parent / "mcp_facts" / "server.py"
-
+# Paths
 PYTHON_INTERPRETER = Path(__file__).parent.parent / "venv" / "bin" / "python"
+MCP_RAG_SERVER_PATH = Path(__file__).parent.parent / "mcp_rag" / "server.py"
 
 # MCP Servers Configuration
-# Each server is defined by name, command, and args
 MCP_SERVERS = [
     {
-        "name": "weeek_tasks",
-        "command": str(PYTHON_INTERPRETER),
-        "args": [str(MCP_TASKS_SERVER_PATH)],
-        "env": None
+        "name": "github_copilot",
+        "transport": "http",
+        "url": GITHUB_COPILOT_MCP_URL,
+        "auth_token": GITHUB_TOKEN
     },
     {
-        "name": "random_facts",
+        "name": "rag_specs",
+        "transport": "stdio",
         "command": str(PYTHON_INTERPRETER),
-        "args": [str(MCP_FACTS_SERVER_PATH)],
-        "env": None
-    },
-    {
-        "name": "mobile_mcp",
-        "command": "npx",
-        "args": ["-y", "@mobilenext/mobile-mcp@latest"],
+        "args": [str(MCP_RAG_SERVER_PATH)],
         "env": {
-            **os.environ.copy(),  # Inherit all environment variables
-            "NVM_DIR": str(Path.home() / ".nvm"),
-            "PATH": f"{Path.home() / '.nvm/versions/node/v22.21.1/bin'}:{os.getenv('PATH', '')}"
+            **os.environ.copy(),
+            "GITHUB_TOKEN": GITHUB_TOKEN,
+            "GITHUB_OWNER": GITHUB_OWNER,
+            "GITHUB_REPO": GITHUB_REPO,
+            "SPECS_PATH": SPECS_PATH
         }
     }
 ]
 
+# Conversation settings
 MAX_CONVERSATION_HISTORY = 50
 
-WELCOME_MESSAGE = "Hello! Use /tasks command to manage your tasks from Weeek task tracker, /fact to get a random fact, or /docs_embed to generate embeddings from markdown files.\n\nExamples:\n/tasks show me what's in progress\n/tasks list all my tasks\n/fact\n/fact tell me something interesting\n/docs_embed\n\nOther commands:\n/subscribe - Enable periodic task summaries\n/unsubscribe - Disable periodic summaries"
+# Bot messages
+WELCOME_MESSAGE = """Welcome to EasyPomodoro Project Consultant!
+
+I'm here to help you understand the EasyPomodoro Android project.
+
+I have access to:
+- GitHub Copilot MCP - for browsing project code
+- RAG Documentation - for searching project specs
+
+Just ask me anything about the project!
+
+Examples:
+- What is the project architecture?
+- How does the timer feature work?
+- Show me the main activity code
+- What are the app's core features?"""
 
 MCP_USED_INDICATOR = "\n\n✓ MCP was used"
 
 ERROR_MESSAGE = "Sorry, something went wrong. Please try again."
 
-TOOL_CALL_TIMEOUT = 30.0
-
-# Periodic task monitoring configuration
-TASK_FETCH_INTERVAL = 300000  # seconds - how often to fetch tasks from MCP
-SUMMARY_INTERVAL = 1200000  # seconds (2 minutes) - how often to send summaries
-TASKS_SNAPSHOT_FILE = "tasks_snapshot.json"
-SUBSCRIBERS_FILE = "subscribers.json"
+TOOL_CALL_TIMEOUT = 120.0
