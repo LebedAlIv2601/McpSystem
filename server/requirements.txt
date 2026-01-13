@@ -1,0 +1,17 @@
+# FastAPI and server
+fastapi>=0.109.0
+uvicorn>=0.27.0
+pydantic>=2.10.0
+
+# HTTP client
+httpx>=0.28.0
+
+# MCP SDK
+mcp>=1.0.0
+
+# Environment
+python-dotenv>=1.0.0
+
+# Vector search (for RAG)
+numpy>=1.26.0
+faiss-cpu>=1.7.4

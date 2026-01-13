@@ -1,0 +1,206 @@
+"""Chat service for processing messages with OpenRouter and MCP tools."""
+
+import json
+import logging
+from datetime import datetime
+from typing import Optional, Tuple
+
+from config import ESSENTIAL_TOOLS, MCP_USED_INDICATOR
+from conversation import ConversationManager
+from openrouter_client import OpenRouterClient
+from mcp_manager import MCPManager
+
+logger = logging.getLogger(__name__)
+
+
+class ChatService:
+    """Service for handling chat requests with MCP tool integration."""
+
+    def __init__(self, mcp_manager: MCPManager):
+        self.mcp_manager = mcp_manager
+        self.conversation_manager = ConversationManager()
+        self.openrouter_client = OpenRouterClient()
+        self.openrouter_tools = []
+
+    def initialize(self) -> None:
+        """Initialize service with MCP tools."""
+        mcp_tools = self.mcp_manager.get_tools()
+
+        # Log all available tools from MCP
+        logger.info(f"=== ALL MCP TOOLS ({len(mcp_tools)}) ===")
+        for tool in mcp_tools:
+            logger.info(f"  - {tool['name']}: {tool.get('description', '')[:80]}...")
+
+        # Filter to essential tools only to reduce token usage
+        filtered_tools = [t for t in mcp_tools if t["name"] in ESSENTIAL_TOOLS]
+        logger.info(f"Filtered tools: {len(filtered_tools)}/{len(mcp_tools)} (saved ~{(len(mcp_tools) - len(filtered_tools)) * 60} tokens)")
+
+        self.openrouter_tools = self.openrouter_client.convert_mcp_tools_to_openrouter(filtered_tools)
+        logger.info(f"Chat service initialized with {len(self.openrouter_tools)} tools")
+
+    async def process_message(self, user_id: str, message: str) -> Tuple[str, int, bool]:
+        """
+        Process user message and return response.
+
+        Args:
+            user_id: Unique user identifier
+            message: User message text
+
+        Returns:
+            Tuple of (response_text, tool_calls_count, mcp_was_used)
+        """
+        logger.info(f"User {user_id}: Processing message: {message[:100]}...")
+
+        # Check and clear history if full
+        if self.conversation_manager.check_and_clear_if_full(user_id):
+            logger.info(f"User {user_id}: History cleared (reached limit)")
+
+        # Add user message to history
+        self.conversation_manager.add_message(user_id, "user", message)
+
+        # Process with OpenRouter
+        response_text, tool_calls_count, mcp_was_used = await self._process_with_openrouter(user_id)
+
+        if response_text:
+            # Clean response for storage (remove indicator)
+            clean_response = response_text.replace(MCP_USED_INDICATOR, "").strip()
+            self.conversation_manager.add_message(user_id, "assistant", clean_response)
+
+        return response_text or "Sorry, something went wrong.", tool_calls_count, mcp_was_used
+
+    async def _process_with_openrouter(self, user_id: str) -> Tuple[Optional[str], int, bool]:
+        """Process message with OpenRouter and MCP tools."""
+        conversation_history = self.conversation_manager.get_history(user_id)
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        system_prompt = {
+            "role": "system",
+            "content": f"""Current date: {current_date}.
+
+You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/EasyPomodoro).
+
+**TOOLS:**
+
+1. **get_project_structure** - Get directory tree. USE FIRST to find file paths!
+   Example: get_project_structure(path="app/src/main/java", max_depth=4)
+
+2. **get_file_contents** - Read file content (use exact path from structure)
+   Example: get_file_contents(owner="LebedAlIv2601", repo="EasyPomodoro", path="app/.../MainActivity.kt")
+
+3. **rag_query** - Search project documentation
+
+4. **list_commits**, **list_issues**, **list_pull_requests** - GitHub items
+
+**WORKFLOW:**
+1. For code -> get_project_structure to find paths -> get_file_contents to read
+2. For architecture -> rag_query
+3. ALWAYS provide complete answer after using tools
+
+Respond in user's language."""
+        }
+
+        messages_with_system = [system_prompt] + conversation_history
+        mcp_was_used = False
+        total_tool_calls = 0
+
+        tool_choice = "auto" if self.openrouter_tools else None
+
+        try:
+            max_iterations = 5
+            iteration = 0
+            current_messages = messages_with_system
+            response_text = None
+            accumulated_content = []
+
+            while iteration < max_iterations:
+                iteration += 1
+                logger.info(f"User {user_id}: Tool call iteration {iteration}/{max_iterations}")
+
+                # On last iteration, disable tools to force final response
+                is_last_iteration = (iteration == max_iterations)
+                current_tools = None if is_last_iteration else self.openrouter_tools
+                current_tool_choice = None if is_last_iteration else tool_choice
+
+                response_text, tool_calls = await self.openrouter_client.chat_completion(
+                    messages=current_messages,
+                    tools=current_tools if current_tools else None,
+                    tool_choice=current_tool_choice
+                )
+
+                # Accumulate non-empty content
+                if response_text:
+                    accumulated_content.append(response_text)
+
+                if not tool_calls:
+                    logger.info(f"User {user_id}: No tool calls in iteration {iteration}, finishing")
+                    if not response_text and accumulated_content:
+                        response_text = accumulated_content[-1]
+                        logger.info(f"User {user_id}: Using accumulated content")
+                    break
+
+                logger.info(f"User {user_id}: Processing {len(tool_calls)} tool calls")
+                mcp_was_used = True
+                total_tool_calls += len(tool_calls)
+
+                tool_results = []
+                for tool_call in tool_calls:
+                    tool_name = tool_call["name"]
+                    tool_args = tool_call["arguments"]
+
+                    logger.info(f"User {user_id}: Executing tool {tool_name}")
+
+                    try:
+                        result = await self.mcp_manager.call_tool(tool_name, tool_args)
+                        result_content = result["result"]
+
+                        try:
+                            parsed_result = json.loads(result_content)
+                            if isinstance(parsed_result, dict) and "error" in parsed_result:
+                                logger.error(f"User {user_id}: MCP tool returned error: {parsed_result['error']}")
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+
+                        tool_results.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": result_content
+                        })
+                    except Exception as e:
+                        logger.error(f"User {user_id}: Tool execution error: {e}", exc_info=True)
+                        tool_results.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": json.dumps({"error": str(e)})
+                        })
+
+                # Add assistant message with tool_calls for proper API format
+                assistant_msg = {"role": "assistant", "content": response_text or ""}
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": json.dumps(tc["arguments"])
+                        }
+                    }
+                    for tc in tool_calls
+                ]
+                current_messages.append(assistant_msg)
+
+                # Add tool results
+                for tr in tool_results:
+                    current_messages.append(tr)
+
+            if response_text and mcp_was_used:
+                response_text += MCP_USED_INDICATOR
+
+            return response_text, total_tool_calls, mcp_was_used
+
+        except Exception as e:
+            logger.error(f"User {user_id}: OpenRouter processing error: {e}", exc_info=True)
+            return None, 0, False
+
+    def get_tools_count(self) -> int:
+        """Get number of available tools."""
+        return len(self.openrouter_tools)

@@ -6,7 +6,6 @@ import signal
 import sys
 
 from logger import setup_logging
-from mcp_manager import MCPManager
 from bot import TelegramBot
 
 logger = logging.getLogger(__name__)
@@ -16,23 +15,22 @@ class Application:
     """Main application orchestrator."""
 
     def __init__(self):
-        self.mcp_manager: MCPManager = None
         self.bot: TelegramBot = None
         self.shutdown_event = asyncio.Event()
-        self.mcp_context = None
 
     async def startup(self) -> None:
         """Initialize and start all components."""
         logger.info("Application startup initiated")
 
-        self.mcp_manager = MCPManager()
+        self.bot = TelegramBot()
 
-        logger.info("Connecting to MCP servers")
-        self.mcp_context = self.mcp_manager.connect()
-        await self.mcp_context.__aenter__()
-
-        self.bot = TelegramBot(self.mcp_manager)
-        self.bot.initialize()
+        # Check backend health
+        logger.info("Checking backend health...")
+        is_healthy = await self.bot.backend_client.health_check()
+        if is_healthy:
+            logger.info("Backend is healthy")
+        else:
+            logger.warning("Backend health check failed, but continuing...")
 
         await self.bot.run()
 
@@ -44,9 +42,6 @@ class Application:
 
         if self.bot:
             await self.bot.stop()
-
-        if self.mcp_context:
-            await self.mcp_context.__aexit__(None, None, None)
 
         logger.info("Application shutdown completed")
 

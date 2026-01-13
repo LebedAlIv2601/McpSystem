@@ -1,25 +1,15 @@
 """Telegram bot handler for EasyPomodoro project consultant."""
 
 import asyncio
-import json
 import logging
-from datetime import datetime
 from typing import Optional
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TimedOut, NetworkError
 
-from config import (
-    TELEGRAM_BOT_TOKEN,
-    WELCOME_MESSAGE,
-    ERROR_MESSAGE,
-    MCP_USED_INDICATOR,
-    ESSENTIAL_TOOLS
-)
-from conversation import ConversationManager
-from openrouter_client import OpenRouterClient
-from mcp_manager import MCPManager
+from config import TELEGRAM_BOT_TOKEN, WELCOME_MESSAGE, ERROR_MESSAGE
+from backend_client import BackendClient
 
 logger = logging.getLogger(__name__)
 
@@ -42,28 +32,9 @@ async def retry_telegram_call(func, *args, max_retries=3, **kwargs):
 class TelegramBot:
     """Telegram bot for EasyPomodoro project consultation."""
 
-    def __init__(self, mcp_manager: MCPManager):
-        self.mcp_manager = mcp_manager
-        self.conversation_manager = ConversationManager()
-        self.openrouter_client = OpenRouterClient()
+    def __init__(self):
+        self.backend_client = BackendClient()
         self.application: Optional[Application] = None
-        self.openrouter_tools = []
-
-    def initialize(self) -> None:
-        """Initialize bot with MCP tools."""
-        mcp_tools = self.mcp_manager.get_tools()
-
-        # Log all available tools from MCP
-        logger.info(f"=== ALL MCP TOOLS ({len(mcp_tools)}) ===")
-        for tool in mcp_tools:
-            logger.info(f"  - {tool['name']}: {tool.get('description', '')[:80]}...")
-
-        # Filter to essential tools only to reduce token usage
-        filtered_tools = [t for t in mcp_tools if t["name"] in ESSENTIAL_TOOLS]
-        logger.info(f"Filtered tools: {len(filtered_tools)}/{len(mcp_tools)} (saved ~{(len(mcp_tools) - len(filtered_tools)) * 60} tokens)")
-
-        self.openrouter_tools = self.openrouter_client.convert_mcp_tools_to_openrouter(filtered_tools)
-        logger.info(f"Bot initialized with {len(self.openrouter_tools)} tools")
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
@@ -81,24 +52,21 @@ class TelegramBot:
         thinking_msg = None
 
         try:
-            if self.conversation_manager.check_and_clear_if_full(user_id):
-                logger.info(f"User {user_id}: History cleared (reached limit)")
-                await update.message.reply_text("Conversation history cleared due to message limit.")
-
-            self.conversation_manager.add_message(user_id, "user", user_message)
-
+            # Show thinking indicator
             thinking_msg = await retry_telegram_call(update.message.reply_text, "Думаю...")
 
-            response_text = await self._process_with_openrouter(user_id, user_message)
+            # Send message to backend
+            response_text, mcp_used = await self.backend_client.send_message(
+                user_id=str(user_id),
+                message=user_message
+            )
 
+            # Delete thinking message
             await retry_telegram_call(thinking_msg.delete)
             thinking_msg = None
 
+            # Send response
             if response_text:
-                mcp_indicator_present = MCP_USED_INDICATOR in response_text
-                clean_response = response_text.replace(MCP_USED_INDICATOR, "").strip() if mcp_indicator_present else response_text
-                self.conversation_manager.add_message(user_id, "assistant", clean_response)
-
                 await retry_telegram_call(update.message.reply_text, response_text)
             else:
                 await retry_telegram_call(update.message.reply_text, ERROR_MESSAGE)
@@ -114,139 +82,6 @@ class TelegramBot:
                 await retry_telegram_call(update.message.reply_text, ERROR_MESSAGE)
             except Exception:
                 logger.error(f"User {user_id}: Failed to send error message")
-
-    async def _process_with_openrouter(self, user_id: int, user_message: str) -> Optional[str]:
-        """Process message with OpenRouter and MCP tools."""
-        conversation_history = self.conversation_manager.get_history(user_id)
-        current_date = datetime.now().strftime("%Y-%m-%d")
-
-        system_prompt = {
-            "role": "system",
-            "content": f"""Current date: {current_date}.
-
-You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/EasyPomodoro).
-
-**TOOLS:**
-
-1. **get_project_structure** - Get directory tree. USE FIRST to find file paths!
-   Example: get_project_structure(path="app/src/main/java", max_depth=4)
-
-2. **get_file_contents** - Read file content (use exact path from structure)
-   Example: get_file_contents(owner="LebedAlIv2601", repo="EasyPomodoro", path="app/.../MainActivity.kt")
-
-3. **rag_query** - Search project documentation
-
-4. **list_commits**, **list_issues**, **list_pull_requests** - GitHub items
-
-**WORKFLOW:**
-1. For code → get_project_structure to find paths → get_file_contents to read
-2. For architecture → rag_query
-3. ALWAYS provide complete answer after using tools
-
-Respond in user's language."""
-        }
-
-        messages_with_system = [system_prompt] + conversation_history
-        mcp_was_used = False
-
-        tool_choice = "auto" if self.openrouter_tools else None
-
-        try:
-            max_iterations = 5
-            iteration = 0
-            current_messages = messages_with_system
-            response_text = None
-            accumulated_content = []  # Collect content from all iterations
-
-            while iteration < max_iterations:
-                iteration += 1
-                logger.info(f"User {user_id}: Tool call iteration {iteration}/{max_iterations}")
-
-                # On last iteration, disable tools to force final response
-                is_last_iteration = (iteration == max_iterations)
-                current_tools = None if is_last_iteration else self.openrouter_tools
-                current_tool_choice = None if is_last_iteration else tool_choice
-
-                response_text, tool_calls = await self.openrouter_client.chat_completion(
-                    messages=current_messages,
-                    tools=current_tools if current_tools else None,
-                    tool_choice=current_tool_choice
-                )
-
-                # Accumulate non-empty content
-                if response_text:
-                    accumulated_content.append(response_text)
-
-                if not tool_calls:
-                    logger.info(f"User {user_id}: No tool calls in iteration {iteration}, finishing")
-                    # Use accumulated content if final response is empty
-                    if not response_text and accumulated_content:
-                        response_text = accumulated_content[-1]  # Use last non-empty
-                        logger.info(f"User {user_id}: Using accumulated content")
-                    logger.info(f"User {user_id}: Final response_text: {response_text[:200] if response_text else 'None'}")
-                    break
-
-                logger.info(f"User {user_id}: Processing {len(tool_calls)} tool calls")
-                mcp_was_used = True
-
-                tool_results = []
-                for tool_call in tool_calls:
-                    tool_name = tool_call["name"]
-                    tool_args = tool_call["arguments"]
-
-                    logger.info(f"User {user_id}: Executing tool {tool_name}")
-
-                    try:
-                        result = await self.mcp_manager.call_tool(tool_name, tool_args)
-                        result_content = result["result"]
-
-                        try:
-                            parsed_result = json.loads(result_content)
-                            if isinstance(parsed_result, dict) and "error" in parsed_result:
-                                logger.error(f"User {user_id}: MCP tool returned error: {parsed_result['error']}")
-                        except (json.JSONDecodeError, ValueError):
-                            pass
-
-                        tool_results.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call["id"],
-                            "content": result_content
-                        })
-                    except Exception as e:
-                        logger.error(f"User {user_id}: Tool execution error: {e}", exc_info=True)
-                        tool_results.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call["id"],
-                            "content": json.dumps({"error": str(e)})
-                        })
-
-                # Add assistant message with tool_calls for proper API format
-                assistant_msg = {"role": "assistant", "content": response_text or ""}
-                assistant_msg["tool_calls"] = [
-                    {
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": {
-                            "name": tc["name"],
-                            "arguments": json.dumps(tc["arguments"])
-                        }
-                    }
-                    for tc in tool_calls
-                ]
-                current_messages.append(assistant_msg)
-
-                # Add tool results
-                for tr in tool_results:
-                    current_messages.append(tr)
-
-            if response_text and mcp_was_used:
-                response_text += MCP_USED_INDICATOR
-
-            return response_text
-
-        except Exception as e:
-            logger.error(f"User {user_id}: OpenRouter processing error: {e}", exc_info=True)
-            return None
 
     async def run(self) -> None:
         """Run the Telegram bot."""
@@ -270,6 +105,9 @@ Respond in user's language."""
 
     async def stop(self) -> None:
         """Stop the Telegram bot."""
+        # Close backend client
+        await self.backend_client.close()
+
         if self.application:
             logger.info("Stopping Telegram bot")
             try:

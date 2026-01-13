@@ -1,6 +1,5 @@
 """HTTP Streamable transport for MCP protocol (spec version 2025-03-26)."""
 
-import asyncio
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -185,7 +184,7 @@ class MCPHttpClient:
                     "tools": {}
                 },
                 "clientInfo": {
-                    "name": "telegram-bot-mcp-client",
+                    "name": "mcp-backend-server",
                     "version": "1.0.0"
                 }
             }

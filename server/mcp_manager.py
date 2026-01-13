@@ -24,6 +24,7 @@ class MCPManager:
         self.tool_server_map: Dict[str, str] = {}
         self.tool_transport_map: Dict[str, str] = {}
         self._exit_stack: AsyncExitStack = None
+        self._connected = False
 
     @asynccontextmanager
     async def connect(self):
@@ -47,6 +48,7 @@ class MCPManager:
                     # Continue with other servers
 
             await self._fetch_tools()
+            self._connected = True
 
             try:
                 yield self
@@ -156,6 +158,11 @@ class MCPManager:
         self.http_clients.clear()
         self.stdio_sessions.clear()
         self._exit_stack = None
+        self._connected = False
+
+    def is_connected(self) -> bool:
+        """Check if MCP manager is connected."""
+        return self._connected
 
     def get_tools(self) -> List[Dict[str, Any]]:
         """Get list of available tools."""

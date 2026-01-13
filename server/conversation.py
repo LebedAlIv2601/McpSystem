@@ -9,10 +9,10 @@ class ConversationManager:
     """Thread-safe conversation history manager for multiple users."""
 
     def __init__(self):
-        self._histories: Dict[int, List[Dict[str, str]]] = {}
+        self._histories: Dict[str, List[Dict[str, str]]] = {}
         self._lock = threading.Lock()
 
-    def add_message(self, user_id: int, role: str, content: str) -> None:
+    def add_message(self, user_id: str, role: str, content: str) -> None:
         """Add message to user's conversation history."""
         with self._lock:
             if user_id not in self._histories:
@@ -23,18 +23,18 @@ class ConversationManager:
                 "content": content
             })
 
-    def get_history(self, user_id: int) -> List[Dict[str, str]]:
+    def get_history(self, user_id: str) -> List[Dict[str, str]]:
         """Retrieve user's conversation history."""
         with self._lock:
             return self._histories.get(user_id, []).copy()
 
-    def clear_history(self, user_id: int) -> None:
+    def clear_history(self, user_id: str) -> None:
         """Clear user's conversation history."""
         with self._lock:
             if user_id in self._histories:
                 self._histories[user_id] = []
 
-    def check_and_clear_if_full(self, user_id: int) -> bool:
+    def check_and_clear_if_full(self, user_id: str) -> bool:
         """
         Check if history reached limit and clear if needed.
 
@@ -48,7 +48,7 @@ class ConversationManager:
                     return True
         return False
 
-    def get_message_count(self, user_id: int) -> int:
+    def get_message_count(self, user_id: str) -> int:
         """Get current message count for user."""
         with self._lock:
             return len(self._histories.get(user_id, []))
