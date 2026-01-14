@@ -8,6 +8,7 @@ class ChatRequest(BaseModel):
     """Request model for chat endpoint."""
 
     user_id: str = Field(..., description="Unique user identifier")
+    user_name: str = Field(..., description="User display name")
     message: str = Field(..., min_length=1, description="User message text")
 
 

@@ -35,12 +35,13 @@ class BackendClient:
             await self._client.aclose()
             self._client = None
 
-    async def send_message(self, user_id: str, message: str) -> Tuple[str, bool]:
+    async def send_message(self, user_id: str, user_name: str, message: str) -> Tuple[str, bool]:
         """
         Send message to backend and get response.
 
         Args:
             user_id: Unique user identifier
+            user_name: User display name
             message: User message text
 
         Returns:
@@ -54,6 +55,7 @@ class BackendClient:
 
         payload = {
             "user_id": user_id,
+            "user_name": user_name,
             "message": message
         }
 

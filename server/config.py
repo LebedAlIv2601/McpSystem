@@ -35,6 +35,7 @@ GITHUB_COPILOT_MCP_URL = "https://api.githubcopilot.com/mcp/"
 # Paths
 PYTHON_INTERPRETER = Path(__file__).parent / "mcp_rag" / ".venv" / "bin" / "python"
 MCP_RAG_SERVER_PATH = Path(__file__).parent / "mcp_rag" / "server.py"
+MCP_SUPPORT_SERVER_PATH = Path(__file__).parent / "mcp_support" / "server.py"
 
 # Use system python if venv doesn't exist
 if not PYTHON_INTERPRETER.exists():
@@ -43,12 +44,13 @@ if not PYTHON_INTERPRETER.exists():
 
 # MCP Servers Configuration
 MCP_SERVERS = [
-    {
-        "name": "github_copilot",
-        "transport": "http",
-        "url": GITHUB_COPILOT_MCP_URL,
-        "auth_token": GITHUB_TOKEN
-    },
+    # NOTE: GitHub Copilot MCP disabled - not needed for support system
+    # {
+    #     "name": "github_copilot",
+    #     "transport": "http",
+    #     "url": GITHUB_COPILOT_MCP_URL,
+    #     "auth_token": GITHUB_TOKEN
+    # },
     {
         "name": "rag_specs",
         "transport": "stdio",
@@ -62,6 +64,15 @@ MCP_SERVERS = [
             "SPECS_PATH": SPECS_PATH,
             "OPENROUTER_API_KEY": OPENROUTER_API_KEY
         }
+    },
+    {
+        "name": "support_tickets",
+        "transport": "stdio",
+        "command": str(PYTHON_INTERPRETER),
+        "args": [str(MCP_SUPPORT_SERVER_PATH)],
+        "env": {
+            **os.environ.copy()
+        }
     }
 ]
 
@@ -70,26 +81,28 @@ MAX_CONVERSATION_HISTORY = 50
 
 # Tool call settings
 TOOL_CALL_TIMEOUT = 120.0
+MAX_TOOL_ITERATIONS = 15
 
 # Essential tools filter - only these tools will be sent to the model
 ESSENTIAL_TOOLS = [
-    # RAG MCP - project structure (use first!)
-    "get_project_structure",
-    # GitHub Copilot MCP - file operations
-    "get_file_contents",
-    # GitHub Copilot MCP - commits
-    "list_commits",
-    "get_commit",
-    # GitHub Copilot MCP - issues
-    "list_issues",
-    "issue_read",
-    # GitHub Copilot MCP - pull requests
-    "list_pull_requests",
-    "pull_request_read",
-    # RAG MCP - documentation
+    # Support tickets MCP - ticket management
+    "get_user_tickets",
+    "create_ticket",
+    "update_ticket_status",
+    "update_ticket_description",
+    # RAG MCP - documentation and FAQ
     "rag_query",
     "list_specs",
     "get_spec_content",
+    # NOTE: GitHub tools disabled - not needed for support system
+    # "get_project_structure",
+    # "get_file_contents",
+    # "list_commits",
+    # "get_commit",
+    # "list_issues",
+    # "issue_read",
+    # "list_pull_requests",
+    # "pull_request_read",
 ]
 
 # Response indicator

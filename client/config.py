@@ -20,20 +20,20 @@ if not BACKEND_API_KEY:
     raise ValueError("BACKEND_API_KEY not found in .env file")
 
 # Bot messages
-WELCOME_MESSAGE = """Welcome to EasyPomodoro Project Consultant!
+WELCOME_MESSAGE = """Добро пожаловать в службу поддержки EasyPomodoro!
 
-I'm here to help you understand the EasyPomodoro Android project.
+Я помогу вам с вопросами по приложению EasyPomodoro.
 
-I have access to:
-- GitHub Copilot MCP - for browsing project code
-- RAG Documentation - for searching project specs
+Что я умею:
+- Отвечать на вопросы по использованию приложения
+- Помогать с решением проблем
+- Создавать и отслеживать ваши обращения
 
-Just ask me anything about the project!
+Просто опишите вашу проблему или задайте вопрос!
 
-Examples:
-- What is the project architecture?
-- How does the timer feature work?
-- Show me the main activity code
-- What are the app's core features?"""
+Примеры:
+- Как настроить таймер?
+- Приложение не сохраняет настройки
+- Как работают уведомления?"""
 
-ERROR_MESSAGE = "Sorry, something went wrong. Please try again."
+ERROR_MESSAGE = "Извините, произошла ошибка. Попробуйте ещё раз."

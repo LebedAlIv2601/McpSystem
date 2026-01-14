@@ -109,26 +109,27 @@ async def list_tools() -> list[Tool]:
                 "required": []
             }
         ),
-        Tool(
-            name="get_project_structure",
-            description="Get the project directory structure as a tree. Use this FIRST to find file paths before using get_file_contents.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Starting path (e.g., 'app/src/main/java'). Empty for root.",
-                        "default": ""
-                    },
-                    "max_depth": {
-                        "type": "integer",
-                        "description": "Max depth to traverse (default: 4)",
-                        "default": 4
-                    }
-                },
-                "required": []
-            }
-        ),
+        # NOTE: get_project_structure temporarily disabled - not needed for support system
+        # Tool(
+        #     name="get_project_structure",
+        #     description="Get the project directory structure as a tree. Use this FIRST to find file paths before using get_file_contents.",
+        #     inputSchema={
+        #         "type": "object",
+        #         "properties": {
+        #             "path": {
+        #                 "type": "string",
+        #                 "description": "Starting path (e.g., 'app/src/main/java'). Empty for root.",
+        #                 "default": ""
+        #             },
+        #             "max_depth": {
+        #                 "type": "integer",
+        #                 "description": "Max depth to traverse (default: 4)",
+        #                 "default": 4
+        #             }
+        #         },
+        #         "required": []
+        #     }
+        # ),
     ]
 
 
@@ -146,8 +147,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return await handle_get_spec_content(arguments)
         elif name == "rebuild_index":
             return await handle_rebuild_index()
-        elif name == "get_project_structure":
-            return await handle_get_project_structure(arguments)
+        # NOTE: get_project_structure temporarily disabled
+        # elif name == "get_project_structure":
+        #     return await handle_get_project_structure(arguments)
         else:
             return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
     except Exception as e:

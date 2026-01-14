@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import Optional, Tuple
 
-from config import ESSENTIAL_TOOLS, MCP_USED_INDICATOR
+from config import ESSENTIAL_TOOLS, MCP_USED_INDICATOR, MAX_TOOL_ITERATIONS
 from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
 from mcp_manager import MCPManager
@@ -39,18 +39,19 @@ class ChatService:
         self.openrouter_tools = self.openrouter_client.convert_mcp_tools_to_openrouter(filtered_tools)
         logger.info(f"Chat service initialized with {len(self.openrouter_tools)} tools")
 
-    async def process_message(self, user_id: str, message: str) -> Tuple[str, int, bool]:
+    async def process_message(self, user_id: str, user_name: str, message: str) -> Tuple[str, int, bool]:
         """
         Process user message and return response.
 
         Args:
             user_id: Unique user identifier
+            user_name: User display name
             message: User message text
 
         Returns:
             Tuple of (response_text, tool_calls_count, mcp_was_used)
         """
-        logger.info(f"User {user_id}: Processing message: {message[:100]}...")
+        logger.info(f"User {user_id} ({user_name}): Processing message: {message[:100]}...")
 
         # Check and clear history if full
         if self.conversation_manager.check_and_clear_if_full(user_id):
@@ -60,7 +61,7 @@ class ChatService:
         self.conversation_manager.add_message(user_id, "user", message)
 
         # Process with OpenRouter
-        response_text, tool_calls_count, mcp_was_used = await self._process_with_openrouter(user_id)
+        response_text, tool_calls_count, mcp_was_used = await self._process_with_openrouter(user_id, user_name)
 
         if response_text:
             # Clean response for storage (remove indicator)
@@ -69,7 +70,7 @@ class ChatService:
 
         return response_text or "Sorry, something went wrong.", tool_calls_count, mcp_was_used
 
-    async def _process_with_openrouter(self, user_id: str) -> Tuple[Optional[str], int, bool]:
+    async def _process_with_openrouter(self, user_id: str, user_name: str) -> Tuple[Optional[str], int, bool]:
         """Process message with OpenRouter and MCP tools."""
         conversation_history = self.conversation_manager.get_history(user_id)
         current_date = datetime.now().strftime("%Y-%m-%d")
@@ -78,26 +79,47 @@ class ChatService:
             "role": "system",
             "content": f"""Current date: {current_date}.
 
-You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/EasyPomodoro).
+You are a support agent for EasyPomodoro Android app. Your role is to help users with their questions and issues.
+
+**USER INFO:**
+- User ID: {user_id}
+- User Name: {user_name}
 
 **CRITICAL RULES:**
 - NEVER say "let me look at..." or "I will check..." - just CALL the tool immediately
 - If you need information, CALL a tool. Do NOT describe your intention.
-- Do NOT respond until you have ALL the information needed to give a COMPLETE answer
-- You can call multiple tools in sequence - keep calling until you have everything
+- ALWAYS check user's tickets first using get_user_tickets before responding
+
+**TICKET MANAGEMENT RULES:**
+1. On FIRST message: Call get_user_tickets to check user's ticket history
+2. If NO open/in_progress tickets exist AND user reports an issue:
+   - Call create_ticket with user's issue description
+3. After YOUR FIRST response to user:
+   - If user says issue is resolved (any phrasing like "thanks", "solved", "works now", etc.):
+     - Call update_ticket_status with status="closed"
+   - If user continues with more questions/issues on same topic:
+     - Call update_ticket_status with status="in_progress"
+     - Call update_ticket_description to add new conversation details
+4. NEW ticket is created ONLY if previous ticket has status="closed"
 
 **TOOLS:**
-1. **get_project_structure** - Get directory tree. USE FIRST to find file paths!
-2. **get_file_contents** - Read file content (owner="LebedAlIv2601", repo="EasyPomodoro", path="...")
-3. **rag_query** - Search project documentation semantically
-4. **list_commits**, **list_issues**, **list_pull_requests** - GitHub items
+1. **get_user_tickets** - Get user's ticket history. USE FIRST on every conversation!
+2. **create_ticket** - Create new ticket (only if no open tickets exist)
+3. **update_ticket_status** - Update status: "open" -> "in_progress" -> "closed"
+4. **update_ticket_description** - Update ticket with conversation progress
+5. **rag_query** - Search FAQ and documentation. USE THIS to find answers!
+6. **list_specs**, **get_spec_content** - Get documentation files
 
 **WORKFLOW:**
-1. For code questions: get_project_structure -> get_file_contents (repeat as needed)
-2. For architecture/design: rag_query
-3. ONLY respond with final answer AFTER gathering ALL necessary information
+1. FIRST: get_user_tickets to check existing tickets
+2. SECOND: rag_query to search FAQ/documentation for answers
+3. Create/update tickets as needed based on conversation
+4. Provide helpful response to user
 
-Respond in user's language."""
+**IMPORTANT:**
+- Always search FAQ using rag_query before answering questions
+- Be helpful and friendly
+- Respond in user's language (Russian if user writes in Russian)"""
         }
 
         messages_with_system = [system_prompt] + conversation_history
@@ -107,7 +129,7 @@ Respond in user's language."""
         tool_choice = "auto" if self.openrouter_tools else None
 
         try:
-            max_iterations = 10
+            max_iterations = MAX_TOOL_ITERATIONS
             iteration = 0
             current_messages = messages_with_system
             response_text = None

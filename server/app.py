@@ -58,11 +58,12 @@ async def chat(
     Returns:
         ChatResponse with assistant's response
     """
-    logger.info(f"Chat request from user {request.user_id}")
+    logger.info(f"Chat request from user {request.user_id} ({request.user_name})")
 
     try:
         response_text, tool_calls_count, mcp_used = await chat_service.process_message(
             user_id=request.user_id,
+            user_name=request.user_name,
             message=request.message
         )
 

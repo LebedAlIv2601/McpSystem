@@ -45,9 +45,10 @@ class TelegramBot:
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle user messages."""
         user_id = update.effective_user.id
+        user_name = update.effective_user.first_name or update.effective_user.username or f"User_{user_id}"
         user_message = update.message.text
 
-        logger.info(f"User {user_id}: Received message: {user_message}")
+        logger.info(f"User {user_id} ({user_name}): Received message: {user_message}")
 
         thinking_msg = None
 
@@ -58,6 +59,7 @@ class TelegramBot:
             # Send message to backend
             response_text, mcp_used = await self.backend_client.send_message(
                 user_id=str(user_id),
+                user_name=user_name,
                 message=user_message
             )
 
