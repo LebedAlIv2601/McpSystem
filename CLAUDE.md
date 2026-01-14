@@ -1,50 +1,51 @@
-# EasyPomodoro Project Consultant Bot
+# EasyPomodoro Project Consultant
 
-Telegram bot for consulting on the EasyPomodoro Android project using MCP (Model Context Protocol) servers.
+AI-powered system for consulting on the EasyPomodoro Android project using MCP (Model Context Protocol) servers.
 
 ## Project Overview
 
-This system provides an AI-powered project consultant that can:
-1. Browse and analyze project code via GitHub Copilot MCP (HTTP transport)
-2. Search project documentation using RAG (Retrieval Augmented Generation)
-3. Explore project structure with tree navigation
+This system provides:
+1. **Telegram Bot** - Interactive chat for project questions
+2. **REST API** - Backend with MCP integration for AI-powered responses
+3. **PR Code Review** - Automated pull request reviews via API
+4. Browse and analyze project code via GitHub Copilot MCP
+5. Search project documentation using RAG (Retrieval Augmented Generation)
 
 ## Architecture
 
 ```
-┌─────────────┐
-│ Telegram    │
-│ User        │
-└──────┬──────┘
-       │
-       ↓
-┌─────────────────────────────────────────┐
-│ Telegram Bot (client/bot.py)           │
-│ - Handles user messages                 │
-│ - Manages conversation history          │
-│ - Shows "Думаю..." indicator            │
-│ - Filters tools to essential set        │
-└──────┬──────────────────────────────────┘
-       │
-       ↓
-┌─────────────────────────────────────────┐
-│ OpenRouter API                          │
-│ Model: deepseek/deepseek-v3.2           │
-│ - Processes natural language            │
-│ - Decides when to use tools             │
-└──────┬──────────────────────────────────┘
-       │ (when tool needed)
-       ↓
-┌─────────────────────────────────────────┐
-│ MCP Manager (mcp_manager.py)            │
-│ - Manages 2 MCP server connections      │
-│ - Routes tool calls to correct server   │
-│ - HTTP transport for GitHub Copilot     │
-│ - stdio transport for RAG MCP           │
-└──────┬──────────────────────────────────┘
-       │
-       ├───────────────────────────────────┐
-       ↓                                   ↓
+┌─────────────────┐     ┌─────────────────┐
+│ Telegram User   │     │ GitHub Actions  │
+└────────┬────────┘     └────────┬────────┘
+         │                       │
+         ↓                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Telegram Bot Client                       │
+│                      (client/)                               │
+│  - Handles /start command                                    │
+│  - Forwards messages to backend                              │
+│  - Shows "Думаю..." indicator                                │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Backend Server (server/)                  │
+│                      FastAPI + MCP                           │
+│                                                              │
+│  Endpoints:                                                  │
+│  ├─ POST /api/chat      - General chat with AI              │
+│  ├─ POST /api/review-pr - AI code review for PRs            │
+│  └─ GET  /health        - Health check                       │
+│                                                              │
+│  Components:                                                 │
+│  ├─ chat_service.py     - Message processing + tool loops   │
+│  ├─ mcp_manager.py      - MCP server connections            │
+│  ├─ openrouter_client.py - LLM API integration              │
+│  └─ prompts.py          - System prompts (PR review, etc)   │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+          ┌───────────────┴───────────────┐
+          ↓                               ↓
 ┌──────────────────────┐    ┌──────────────────────┐
 │ GitHub Copilot MCP   │    │ RAG Specs MCP        │
 │ (HTTP Transport)     │    │ (Python/stdio)       │
@@ -53,86 +54,199 @@ This system provides an AI-powered project consultant that can:
 │ api.githubcopilot.   │    │ - rag_query          │
 │ com/mcp/             │    │ - list_specs         │
 │                      │    │ - get_spec_content   │
-│ Essential Tools:     │    │ - rebuild_index      │
+│ Tools:               │    │ - rebuild_index      │
 │ - get_file_contents  │    │ - get_project_       │
-│ - list_commits       │    │   structure (tree)   │
+│ - list_commits       │    │   structure          │
 │ - get_commit         │    │                      │
 │ - list_issues        │    │ Uses:                │
 │ - issue_read         │    │ - GitHub API         │
-│ - list_pull_requests │    │ - FAISS + Ollama     │
-│ - pull_request_read  │    │                      │
+│ - list_pull_requests │    │ - OpenRouter         │
+│ - pull_request_read  │    │   Embeddings         │
 └──────────────────────┘    └──────────────────────┘
 ```
 
+## API Endpoints
+
+### POST /api/chat
+
+General chat endpoint for project questions.
+
+**Request:**
+```json
+{
+  "user_id": "string",
+  "message": "string"
+}
+```
+
+**Response:**
+```json
+{
+  "response": "string",
+  "tool_calls_count": 0,
+  "mcp_used": false
+}
+```
+
+### POST /api/review-pr
+
+AI-powered code review for pull requests.
+
+**Request:**
+```json
+{
+  "pr_number": 123
+}
+```
+
+**Response:**
+```json
+{
+  "review": "## Summary\n...",
+  "tool_calls_count": 5
+}
+```
+
+**Review includes:**
+- Documentation compliance check (via RAG)
+- Architecture and design patterns review
+- Kotlin/Android best practices
+- Security analysis
+- Performance considerations
+- File-by-file findings with line numbers
+- Verdict: APPROVE / REQUEST_CHANGES / COMMENT
+
+### GET /health
+
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "mcp_connected": true,
+  "tools_count": 11
+}
+```
+
+## GitHub Actions Integration
+
+Use the PR review endpoint in your CI/CD pipeline:
+
+```yaml
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request AI Review
+        id: review
+        run: |
+          RESPONSE=$(curl -s -X POST "${{ secrets.MCP_SERVER_URL }}/api/review-pr" \
+            -H "X-API-Key: ${{ secrets.MCP_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"pr_number": ${{ github.event.pull_request.number }}}')
+
+          echo "$RESPONSE" | jq -r '.review' > review.md
+
+      - name: Post Review Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('review.md', 'utf8');
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '## AI Code Review\n\n' + review
+            });
+```
+
+**Required secrets:**
+- `MCP_SERVER_URL` - Backend server URL (e.g., `https://your-server.railway.app`)
+- `MCP_API_KEY` - API key for authentication
+
 ## System Components
 
-### 1. MCP Servers
+### 1. Backend Server (server/)
 
-#### 1.1 GitHub Copilot MCP (HTTP)
+**Files:**
+- `main.py` - FastAPI application entry point
+- `app.py` - API routes and endpoints
+- `chat_service.py` - Message processing with MCP tool integration
+- `mcp_manager.py` - MCP server connection management
+- `mcp_http_transport.py` - HTTP transport for GitHub Copilot MCP
+- `openrouter_client.py` - OpenRouter LLM API integration
+- `prompts.py` - System prompts for different tasks
+- `schemas.py` - Pydantic models for API
+- `conversation.py` - Per-user conversation history
+- `auth.py` - API key authentication
+- `config.py` - Configuration and environment variables
+- `logger.py` - Logging configuration
 
-**Purpose:** Provide access to GitHub repository via GitHub Copilot's MCP endpoint
+### 2. Telegram Bot Client (client/)
+
+**Files:**
+- `main.py` - Application entry point
+- `bot.py` - Telegram bot handlers
+- `backend_client.py` - HTTP client for backend API
+- `config.py` - Bot configuration
+- `logger.py` - Logging configuration
+
+### 3. RAG MCP Server (server/mcp_rag/)
+
+**Files:**
+- `server.py` - MCP server with RAG tools
+- `github_fetcher.py` - GitHub API client for /specs folder
+- `rag_engine.py` - Vector search with OpenRouter embeddings
+
+### 4. MCP Servers
+
+#### GitHub Copilot MCP (HTTP)
 
 **URL:** `https://api.githubcopilot.com/mcp/`
 
 **Transport:** HTTP (Streamable HTTP transport, MCP spec 2025-03-26)
 
-**Essential Tools (filtered for token efficiency):**
+**Essential Tools:**
 - `get_file_contents` - Read file contents from repository
 - `list_commits` / `get_commit` - View commit history
 - `list_issues` / `issue_read` - Work with issues
 - `list_pull_requests` / `pull_request_read` - Work with PRs
 
-**Note:** The server provides 40+ tools, but only essential ones are sent to the model to reduce token usage.
-
 **Authentication:** GitHub Personal Access Token (PAT)
 
-#### 1.2 RAG Specs MCP (Python)
-
-**Purpose:** Search project documentation using RAG and explore project structure
-
-**Location:** `mcp_rag/`
-
-**Files:**
-- `server.py` - MCP server with RAG tools
-- `github_fetcher.py` - GitHub API client for /specs folder and project structure
-- `rag_engine.py` - FAISS + Ollama embeddings
+#### RAG Specs MCP (Python/stdio)
 
 **Tools:**
 - `rag_query` - Search documentation with semantic similarity
 - `list_specs` - List available specification files
 - `get_spec_content` - Get full content of a spec file
 - `rebuild_index` - Rebuild the RAG index
-- `get_project_structure` - Get directory tree (use FIRST to find file paths)
+- `get_project_structure` - Get directory tree
 
 **Target Repository:** `LebedAlIv2601/EasyPomodoro`
-**Specs Path:** `/specs`
-
-### 2. Telegram Bot Client (client/)
-
-**Files:**
-- `main.py` - Application entry point
-- `bot.py` - Telegram bot handlers with tool call loop
-- `mcp_manager.py` - MCP server management (HTTP + stdio)
-- `mcp_http_transport.py` - HTTP transport for GitHub Copilot MCP
-- `openrouter_client.py` - OpenRouter API integration
-- `conversation.py` - Per-user conversation history
-- `logger.py` - Logging configuration
-- `config.py` - Configuration, environment variables, and ESSENTIAL_TOOLS filter
 
 ## Installation
 
 ### Prerequisites
 - Python 3.14+
-- Ollama with `nomic-embed-text` model (for RAG)
-- Telegram bot token
 - OpenRouter API key
 - GitHub Personal Access Token
+- Telegram bot token (for client)
 
-### Setup
+### Server Setup
 
 1. **Clone repository:**
 ```bash
-cd /path/to/McpSystem
+git clone <repo-url>
+cd McpSystem
 ```
 
 2. **Create virtual environment:**
@@ -144,22 +258,38 @@ source venv/bin/activate
 3. **Install dependencies:**
 ```bash
 pip install -r requirements.txt
-pip install -r mcp_rag/requirements.txt
 ```
 
-4. **Install Ollama model (for RAG):**
+4. **Configure environment:**
 ```bash
-ollama pull nomic-embed-text
+cd server
+cp .env.example .env
+# Edit .env:
+# BACKEND_API_KEY=your_secure_api_key
+# OPENROUTER_API_KEY=your_openrouter_key
+# GITHUB_TOKEN=your_github_pat
 ```
 
-5. **Configure environment:**
+5. **Run server:**
+```bash
+python main.py
+```
+
+### Client Setup
+
+1. **Configure environment:**
 ```bash
 cd client
 cp .env.example .env
-# Edit .env with your credentials:
-# TELEGRAM_BOT_TOKEN=your_token
-# OPENROUTER_API_KEY=your_key
-# GITHUB_TOKEN=your_github_pat
+# Edit .env:
+# TELEGRAM_BOT_TOKEN=your_bot_token
+# BACKEND_URL=http://localhost:8000
+# BACKEND_API_KEY=same_as_server
+```
+
+2. **Run client:**
+```bash
+python main.py
 ```
 
 ### GitHub PAT Scopes
@@ -169,102 +299,81 @@ Create a Classic PAT with these scopes:
 - `read:org` - Read organization data (optional)
 - `read:user` - Read user data
 
-## Running
-
-```bash
-cd client
-../venv/bin/python main.py
-```
-
-The bot will:
-1. Connect to GitHub Copilot MCP (HTTP)
-2. Start RAG Specs MCP server (Python/stdio)
-3. Fetch and filter tools to essential set (~12 tools)
-4. Start Telegram bot polling
-
-## Usage
-
-### Commands
-
-- `/start` - Show welcome message
-
-### Example Queries
-
-**Documentation questions:**
-- "What is the project architecture?"
-- "How does the timer feature work?"
-- "List all specification files"
-
-**Code questions:**
-- "Show me the main activity code"
-- "What files are in the app module?"
-- "Get project structure"
-
-**GitHub questions:**
-- "Show recent commits"
-- "List open issues"
-- "What pull requests are pending?"
-
-### Recommended Workflow
-
-For code exploration, the model follows this workflow:
-1. `get_project_structure` - Find file paths first
-2. `get_file_contents` - Read specific files using exact paths
-
 ## Configuration
 
-### Environment Variables
+### Server Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `BACKEND_API_KEY` | API key for authentication |
+| `OPENROUTER_API_KEY` | OpenRouter API key |
+| `GITHUB_TOKEN` | GitHub Personal Access Token |
+| `OPENROUTER_MODEL` | LLM model (default: `deepseek/deepseek-v3.2`) |
+| `PORT` | Server port (default: `8000`) |
+| `HOST` | Server host (default: `0.0.0.0`) |
+
+### Client Environment Variables
 
 | Variable | Description |
 |----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token |
-| `OPENROUTER_API_KEY` | OpenRouter API key |
-| `GITHUB_TOKEN` | GitHub Personal Access Token |
-
-### config.py Settings
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `OPENROUTER_MODEL` | `deepseek/deepseek-v3.2` | AI model |
-| `GITHUB_OWNER` | `LebedAlIv2601` | Repository owner |
-| `GITHUB_REPO` | `EasyPomodoro` | Repository name |
-| `SPECS_PATH` | `specs` | Documentation folder |
-| `MAX_CONVERSATION_HISTORY` | 50 | Max messages per user |
-| `TOOL_CALL_TIMEOUT` | 120.0 | MCP tool timeout (seconds) |
-| `ESSENTIAL_TOOLS` | list | Tools to send to model (token optimization) |
+| `BACKEND_URL` | Backend server URL |
+| `BACKEND_API_KEY` | API key for backend |
 
 ## Technology Stack
 
 - **Python 3.14** - Main language
+- **FastAPI** - Backend API framework
 - **python-telegram-bot** - Telegram integration
 - **MCP SDK** - Model Context Protocol (HTTP + stdio transports)
-- **httpx** - Async HTTP client for GitHub Copilot MCP
-- **FAISS** - Vector similarity search
-- **Ollama** - Local embeddings (nomic-embed-text)
-- **OpenRouter** - AI model access
+- **httpx** - Async HTTP client
+- **OpenRouter** - LLM API access
+- **Pydantic** - Data validation
 
-## Project Statistics
+## Deployment
 
-- **MCP Servers:** 2
-  - GitHub Copilot MCP (HTTP, ~40 tools available, ~8 essential)
-  - RAG Specs MCP (Python/stdio, 5 tools)
-- **Essential Tools:** ~12 (filtered for token efficiency)
+### Railway
+
+The server is designed for Railway deployment:
+
+1. Connect repository to Railway
+2. Set environment variables in Railway dashboard
+3. Deploy automatically on push
+
+### Manual Testing
+
+```bash
+# Health check
+curl https://your-server.railway.app/health
+
+# Chat
+curl -X POST "https://your-server.railway.app/api/chat" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "test", "message": "What is the project structure?"}'
+
+# PR Review
+curl -X POST "https://your-server.railway.app/api/review-pr" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"pr_number": 1}'
+```
 
 ## Troubleshooting
 
 ### GitHub Copilot MCP connection errors
 - Verify PAT has correct scopes (`repo`, `read:org`)
 - Check token is not expired
-- Ensure token is in `.env` file
 - Check network connectivity to api.githubcopilot.com
 
-### RAG not working
-- Verify Ollama is running: `curl http://localhost:11434/api/tags`
-- Check nomic-embed-text model: `ollama list`
+### Empty responses from PR review
+- Check logs for tool call errors
+- Verify `tool_choice: required` is set for first iteration
+- Model may not support function calling well - try different model
 
-### High token usage
-- Ensure `ESSENTIAL_TOOLS` filter is applied in config.py
-- Check logs for "Filtered tools: X/Y" message
+### High latency
+- PR review may take 30-60 seconds due to multiple tool calls
+- Check OpenRouter rate limits
 
 ## License
 
