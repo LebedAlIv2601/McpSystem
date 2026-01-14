@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -222,6 +223,10 @@ You are a support agent for EasyPomodoro Android app. Your role is to help users
                 for tr in tool_results:
                     current_messages.append(tr)
 
+            # Clean response from tool call artifacts (DeepSeek outputs XML in content)
+            if response_text:
+                response_text = self._clean_tool_call_artifacts(response_text)
+
             if response_text and mcp_was_used:
                 response_text += MCP_USED_INDICATOR
 
@@ -234,6 +239,31 @@ You are a support agent for EasyPomodoro Android app. Your role is to help users
     def get_tools_count(self) -> int:
         """Get number of available tools."""
         return len(self.openrouter_tools)
+
+    def _clean_tool_call_artifacts(self, text: str) -> str:
+        """Remove tool call artifacts from response text.
+
+        Some models (like DeepSeek) output tool calls as XML in the content field.
+        This method removes those artifacts to provide clean responses.
+        """
+        if not text:
+            return text
+
+        # Remove <function_calls>...</function_calls> blocks (standard format)
+        text = re.sub(r'<function_calls>.*?</function_calls>', '', text, flags=re.DOTALL)
+
+        # Remove <｜DSML｜function_calls>...</｜DSML｜function_calls> blocks (DeepSeek format)
+        text = re.sub(r'<｜DSML｜function_calls>.*?</｜DSML｜function_calls>', '', text, flags=re.DOTALL)
+
+        # Remove any remaining <invoke>...</invoke> or similar patterns
+        text = re.sub(r'<invoke\s+name="[^"]*">.*?</invoke>', '', text, flags=re.DOTALL)
+        text = re.sub(r'<｜DSML｜invoke\s+name="[^"]*">.*?</｜DSML｜invoke>', '', text, flags=re.DOTALL)
+
+        # Clean up extra whitespace
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = text.strip()
+
+        return text
 
     async def review_pr(self, pr_number: int) -> Tuple[str, int]:
         """
@@ -345,6 +375,10 @@ You are a support agent for EasyPomodoro Android app. Your role is to help users
 
                 for tr in tool_results:
                     messages.append(tr)
+
+            # Clean response from tool call artifacts
+            if response_text:
+                response_text = self._clean_tool_call_artifacts(response_text)
 
             logger.info(f"PR Review #{pr_number}: Completed with {total_tool_calls} tool calls")
             return response_text or "Failed to generate review.", total_tool_calls
