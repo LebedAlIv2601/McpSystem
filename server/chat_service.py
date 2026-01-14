@@ -150,23 +150,30 @@ You are a support agent for EasyPomodoro Android app. Your role is to help users
                     tool_choice=current_tool_choice
                 )
 
+                # Clean response from tool call artifacts immediately
+                if response_text:
+                    response_text = self._clean_tool_call_artifacts(response_text)
+
                 if not tool_calls:
                     # No tool calls - this should be the final response
                     logger.info(f"User {user_id}: No tool calls in iteration {iteration}")
 
-                    # If model returned empty response, force it to generate one
+                    # If model returned empty response (or only artifacts), force it to generate one
                     if not response_text:
                         logger.info(f"User {user_id}: Empty response, forcing final answer")
                         # Add instruction to generate final answer
                         current_messages.append({
                             "role": "user",
-                            "content": "Based on all the information gathered above, provide a complete answer now."
+                            "content": "Based on all the information gathered above, provide a complete answer now. Do NOT output any XML or function calls."
                         })
                         response_text, _ = await self.openrouter_client.chat_completion(
                             messages=current_messages,
                             tools=None,
                             tool_choice=None
                         )
+                        # Clean forced response as well
+                        if response_text:
+                            response_text = self._clean_tool_call_artifacts(response_text)
                     break
 
                 logger.info(f"User {user_id}: Processing {len(tool_calls)} tool calls")
@@ -222,10 +229,6 @@ You are a support agent for EasyPomodoro Android app. Your role is to help users
                 # Add tool results
                 for tr in tool_results:
                     current_messages.append(tr)
-
-            # Clean response from tool call artifacts (DeepSeek outputs XML in content)
-            if response_text:
-                response_text = self._clean_tool_call_artifacts(response_text)
 
             if response_text and mcp_was_used:
                 response_text += MCP_USED_INDICATOR
@@ -316,6 +319,10 @@ You are a support agent for EasyPomodoro Android app. Your role is to help users
                     tool_choice=current_tool_choice
                 )
 
+                # Clean response from tool call artifacts immediately
+                if response_text:
+                    response_text = self._clean_tool_call_artifacts(response_text)
+
                 if not tool_calls:
                     logger.info(f"PR Review #{pr_number}: No tool calls, finalizing")
 
@@ -323,13 +330,16 @@ You are a support agent for EasyPomodoro Android app. Your role is to help users
                         logger.info(f"PR Review #{pr_number}: Empty response, forcing final answer")
                         messages.append({
                             "role": "user",
-                            "content": "Based on all the information gathered, provide the complete code review now."
+                            "content": "Based on all the information gathered, provide the complete code review now. Do NOT output any XML or function calls."
                         })
                         response_text, _ = await self.openrouter_client.chat_completion(
                             messages=messages,
                             tools=None,
                             tool_choice=None
                         )
+                        # Clean forced response as well
+                        if response_text:
+                            response_text = self._clean_tool_call_artifacts(response_text)
                     break
 
                 logger.info(f"PR Review #{pr_number}: Processing {len(tool_calls)} tool calls")
@@ -375,10 +385,6 @@ You are a support agent for EasyPomodoro Android app. Your role is to help users
 
                 for tr in tool_results:
                     messages.append(tr)
-
-            # Clean response from tool call artifacts
-            if response_text:
-                response_text = self._clean_tool_call_artifacts(response_text)
 
             logger.info(f"PR Review #{pr_number}: Completed with {total_tool_calls} tool calls")
             return response_text or "Failed to generate review.", total_tool_calls
