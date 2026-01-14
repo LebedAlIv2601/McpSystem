@@ -14,7 +14,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
 OPENROUTER_EMBEDDING_MODEL = "google/gemini-embedding-001"
 
-SIMILARITY_THRESHOLD = 0.65
+SIMILARITY_THRESHOLD = 0.6
 RAG_TOP_K = 5
 
 

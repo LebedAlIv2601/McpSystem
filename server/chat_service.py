@@ -106,7 +106,7 @@ Respond in user's language."""
         tool_choice = "auto" if self.openrouter_tools else None
 
         try:
-            max_iterations = 5
+            max_iterations = 10
             iteration = 0
             current_messages = messages_with_system
             response_text = None
