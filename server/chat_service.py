@@ -231,7 +231,12 @@ Respond in user's language."""
             "content": get_pr_review_prompt(pr_number, current_date)
         }
 
-        messages = [system_prompt]
+        user_prompt = {
+            "role": "user",
+            "content": f"Review PR #{pr_number} now. Start by calling pull_request_read tool."
+        }
+
+        messages = [system_prompt, user_prompt]
         total_tool_calls = 0
 
         try:
@@ -245,7 +250,13 @@ Respond in user's language."""
 
                 is_last_iteration = (iteration == max_iterations)
                 current_tools = None if is_last_iteration else self.openrouter_tools
-                current_tool_choice = None if is_last_iteration else "auto"
+                # Use "required" on first iteration to force tool call, then "auto"
+                if iteration == 1:
+                    current_tool_choice = "required"
+                elif is_last_iteration:
+                    current_tool_choice = None
+                else:
+                    current_tool_choice = "auto"
 
                 response_text, tool_calls = await self.openrouter_client.chat_completion(
                     messages=messages,
