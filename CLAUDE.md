@@ -1,29 +1,28 @@
-# EasyPomodoro Project Consultant
+# EasyPomodoro Support System
 
-AI-powered system for consulting on the EasyPomodoro Android project using MCP (Model Context Protocol) servers.
+AI-powered support system for the EasyPomodoro Android app using MCP (Model Context Protocol) servers.
 
 ## Project Overview
 
 This system provides:
-1. **Telegram Bot** - Interactive chat for project questions
+1. **Telegram Bot** - Interactive support chat for users
 2. **REST API** - Backend with MCP integration for AI-powered responses
-3. **PR Code Review** - Automated pull request reviews via API
-4. Browse and analyze project code via GitHub Copilot MCP
-5. Search project documentation using RAG (Retrieval Augmented Generation)
+3. **Ticket Management** - Automatic ticket creation and tracking
+4. **FAQ Search** - RAG-based search through documentation and FAQ
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐
-│ Telegram User   │     │ GitHub Actions  │
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-         ↓                       ↓
+┌─────────────────┐
+│ Telegram User   │
+└────────┬────────┘
+         │
+         ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                    Telegram Bot Client                       │
 │                      (client/)                               │
 │  - Handles /start command                                    │
-│  - Forwards messages to backend                              │
+│  - Forwards messages to backend with user_id + user_name     │
 │  - Shows "Думаю..." indicator                                │
 └─────────────────────────┬───────────────────────────────────┘
                           │
@@ -33,7 +32,7 @@ This system provides:
 │                      FastAPI + MCP                           │
 │                                                              │
 │  Endpoints:                                                  │
-│  ├─ POST /api/chat      - General chat with AI              │
+│  ├─ POST /api/chat      - Support chat with ticket mgmt     │
 │  ├─ POST /api/review-pr - AI code review for PRs            │
 │  └─ GET  /health        - Health check                       │
 │                                                              │
@@ -41,40 +40,52 @@ This system provides:
 │  ├─ chat_service.py     - Message processing + tool loops   │
 │  ├─ mcp_manager.py      - MCP server connections            │
 │  ├─ openrouter_client.py - LLM API integration              │
-│  └─ prompts.py          - System prompts (PR review, etc)   │
+│  └─ prompts.py          - System prompts                    │
 └─────────────────────────┬───────────────────────────────────┘
                           │
           ┌───────────────┴───────────────┐
           ↓                               ↓
 ┌──────────────────────┐    ┌──────────────────────┐
-│ GitHub Copilot MCP   │    │ RAG Specs MCP        │
-│ (HTTP Transport)     │    │ (Python/stdio)       │
+│ Support Tickets MCP  │    │ RAG Specs MCP        │
+│ (Python/stdio)       │    │ (Python/stdio)       │
 │                      │    │                      │
-│ URL:                 │    │ Tools:               │
-│ api.githubcopilot.   │    │ - rag_query          │
-│ com/mcp/             │    │ - list_specs         │
-│                      │    │ - get_spec_content   │
-│ Tools:               │    │ - rebuild_index      │
-│ - get_file_contents  │    │ - get_project_       │
-│ - list_commits       │    │   structure          │
-│ - get_commit         │    │                      │
-│ - list_issues        │    │ Uses:                │
-│ - issue_read         │    │ - GitHub API         │
-│ - list_pull_requests │    │ - OpenRouter         │
-│ - pull_request_read  │    │   Embeddings         │
+│ Tools:               │    │ Tools:               │
+│ - get_user_tickets   │    │ - rag_query          │
+│ - create_ticket      │    │ - list_specs         │
+│ - update_ticket_     │    │ - get_spec_content   │
+│   status             │    │ - rebuild_index      │
+│ - update_ticket_     │    │                      │
+│   description        │    │ Uses:                │
+│                      │    │ - GitHub API         │
+│ Storage:             │    │ - OpenRouter         │
+│ - JSON file DB       │    │   Embeddings         │
 └──────────────────────┘    └──────────────────────┘
 ```
+
+## Ticket Management Logic
+
+The AI agent automatically manages support tickets:
+
+1. **First message**: Check user's tickets via `get_user_tickets`
+2. **No open tickets + new issue**: Create ticket with status `open`
+3. **After first response**:
+   - User confirms resolved → `update_ticket_status(closed)`
+   - User continues conversation → `update_ticket_status(in_progress)` + `update_ticket_description`
+4. **New ticket**: Only created if previous ticket is `closed`
+
+**Ticket statuses:** `open` → `in_progress` → `closed`
 
 ## API Endpoints
 
 ### POST /api/chat
 
-General chat endpoint for project questions.
+Support chat endpoint with ticket management.
 
 **Request:**
 ```json
 {
   "user_id": "string",
+  "user_name": "string",
   "message": "string"
 }
 ```
@@ -107,15 +118,6 @@ AI-powered code review for pull requests.
 }
 ```
 
-**Review includes:**
-- Documentation compliance check (via RAG)
-- Architecture and design patterns review
-- Kotlin/Android best practices
-- Security analysis
-- Performance considerations
-- File-by-file findings with line numbers
-- Verdict: APPROVE / REQUEST_CHANGES / COMMENT
-
 ### GET /health
 
 Health check endpoint.
@@ -125,52 +127,9 @@ Health check endpoint.
 {
   "status": "healthy",
   "mcp_connected": true,
-  "tools_count": 11
+  "tools_count": 7
 }
 ```
-
-## GitHub Actions Integration
-
-Use the PR review endpoint in your CI/CD pipeline:
-
-```yaml
-name: AI Code Review
-
-on:
-  pull_request:
-    types: [opened, synchronize]
-
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Request AI Review
-        id: review
-        run: |
-          RESPONSE=$(curl -s -X POST "${{ secrets.MCP_SERVER_URL }}/api/review-pr" \
-            -H "X-API-Key: ${{ secrets.MCP_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d '{"pr_number": ${{ github.event.pull_request.number }}}')
-
-          echo "$RESPONSE" | jq -r '.review' > review.md
-
-      - name: Post Review Comment
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const review = fs.readFileSync('review.md', 'utf8');
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: '## AI Code Review\n\n' + review
-            });
-```
-
-**Required secrets:**
-- `MCP_SERVER_URL` - Backend server URL (e.g., `https://your-server.railway.app`)
-- `MCP_API_KEY` - API key for authentication
 
 ## System Components
 
@@ -181,7 +140,6 @@ jobs:
 - `app.py` - API routes and endpoints
 - `chat_service.py` - Message processing with MCP tool integration
 - `mcp_manager.py` - MCP server connection management
-- `mcp_http_transport.py` - HTTP transport for GitHub Copilot MCP
 - `openrouter_client.py` - OpenRouter LLM API integration
 - `prompts.py` - System prompts for different tasks
 - `schemas.py` - Pydantic models for API
@@ -199,46 +157,46 @@ jobs:
 - `config.py` - Bot configuration
 - `logger.py` - Logging configuration
 
-### 3. RAG MCP Server (server/mcp_rag/)
+### 3. Support Tickets MCP Server (server/mcp_support/)
+
+**Files:**
+- `server.py` - MCP server with ticket management tools
+- `database.py` - JSON file-based database for users and tickets
+
+**Tools:**
+- `get_user_tickets` - Get all tickets for a user
+- `create_ticket` - Create new support ticket
+- `update_ticket_status` - Update ticket status (open/in_progress/closed)
+- `update_ticket_description` - Update ticket description with conversation progress
+
+**Storage:** `server/data/support_db.json`
+
+### 4. RAG MCP Server (server/mcp_rag/)
 
 **Files:**
 - `server.py` - MCP server with RAG tools
 - `github_fetcher.py` - GitHub API client for /specs folder
 - `rag_engine.py` - Vector search with OpenRouter embeddings
 
-### 4. MCP Servers
-
-#### GitHub Copilot MCP (HTTP)
-
-**URL:** `https://api.githubcopilot.com/mcp/`
-
-**Transport:** HTTP (Streamable HTTP transport, MCP spec 2025-03-26)
-
-**Essential Tools:**
-- `get_file_contents` - Read file contents from repository
-- `list_commits` / `get_commit` - View commit history
-- `list_issues` / `issue_read` - Work with issues
-- `list_pull_requests` / `pull_request_read` - Work with PRs
-
-**Authentication:** GitHub Personal Access Token (PAT)
-
-#### RAG Specs MCP (Python/stdio)
-
 **Tools:**
-- `rag_query` - Search documentation with semantic similarity
+- `rag_query` - Search documentation/FAQ with semantic similarity
 - `list_specs` - List available specification files
 - `get_spec_content` - Get full content of a spec file
 - `rebuild_index` - Rebuild the RAG index
-- `get_project_structure` - Get directory tree
 
 **Target Repository:** `LebedAlIv2601/EasyPomodoro`
+
+### 5. GitHub Copilot MCP (Disabled)
+
+GitHub Copilot MCP is available but currently disabled for the support system.
+Can be re-enabled in `server/config.py` if needed.
 
 ## Installation
 
 ### Prerequisites
-- Python 3.14+
+- Python 3.11+
 - OpenRouter API key
-- GitHub Personal Access Token
+- GitHub Personal Access Token (for RAG)
 - Telegram bot token (for client)
 
 ### Server Setup
@@ -251,7 +209,7 @@ cd McpSystem
 
 2. **Create virtual environment:**
 ```bash
-python3.14 -m venv venv
+python -m venv venv
 source venv/bin/activate
 ```
 
@@ -292,13 +250,6 @@ cp .env.example .env
 python main.py
 ```
 
-### GitHub PAT Scopes
-
-Create a Classic PAT with these scopes:
-- `repo` - Full repository access
-- `read:org` - Read organization data (optional)
-- `read:user` - Read user data
-
 ## Configuration
 
 ### Server Environment Variables
@@ -322,13 +273,14 @@ Create a Classic PAT with these scopes:
 
 ## Technology Stack
 
-- **Python 3.14** - Main language
+- **Python 3.11+** - Main language
 - **FastAPI** - Backend API framework
 - **python-telegram-bot** - Telegram integration
-- **MCP SDK** - Model Context Protocol (HTTP + stdio transports)
+- **MCP SDK** - Model Context Protocol (stdio transport)
 - **httpx** - Async HTTP client
 - **OpenRouter** - LLM API access
 - **Pydantic** - Data validation
+- **FAISS** - Vector similarity search
 
 ## Deployment
 
@@ -346,35 +298,33 @@ The server is designed for Railway deployment:
 # Health check
 curl https://your-server.railway.app/health
 
-# Chat
+# Chat (support)
 curl -X POST "https://your-server.railway.app/api/chat" \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"user_id": "test", "message": "What is the project structure?"}'
-
-# PR Review
-curl -X POST "https://your-server.railway.app/api/review-pr" \
-  -H "X-API-Key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"pr_number": 1}'
+  -d '{"user_id": "123", "user_name": "John", "message": "How to configure timer?"}'
 ```
 
 ## Troubleshooting
 
-### GitHub Copilot MCP connection errors
-- Verify PAT has correct scopes (`repo`, `read:org`)
-- Check token is not expired
-- Check network connectivity to api.githubcopilot.com
-
-### Empty responses from PR review
+### Empty responses
 - Check logs for tool call errors
-- Verify `tool_choice: required` is set for first iteration
-- Model may not support function calling well - try different model
+- Model may output XML artifacts - these are filtered automatically
+- If response is still empty, check `_clean_tool_call_artifacts` function
+
+### Ticket not created
+- Verify MCP support server is connected (check logs)
+- Check if user already has an open ticket
+
+### RAG not finding answers
+- Ensure specs/FAQ files exist in target repository
+- Check if RAG index is built (first query triggers build)
+- Verify GitHub token has read access
 
 ### High latency
-- PR review may take 30-60 seconds due to multiple tool calls
+- Support queries may take 10-30 seconds due to multiple tool calls
 - Check OpenRouter rate limits
 
 ## License
 
-This project demonstrates MCP integration for AI-powered project consultation.
+This project demonstrates MCP integration for AI-powered support systems.
