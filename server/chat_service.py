@@ -110,7 +110,6 @@ Respond in user's language."""
             iteration = 0
             current_messages = messages_with_system
             response_text = None
-            accumulated_content = []
 
             while iteration < max_iterations:
                 iteration += 1
@@ -127,15 +126,23 @@ Respond in user's language."""
                     tool_choice=current_tool_choice
                 )
 
-                # Accumulate non-empty content
-                if response_text:
-                    accumulated_content.append(response_text)
-
                 if not tool_calls:
-                    logger.info(f"User {user_id}: No tool calls in iteration {iteration}, finishing")
-                    if not response_text and accumulated_content:
-                        response_text = accumulated_content[-1]
-                        logger.info(f"User {user_id}: Using accumulated content")
+                    # No tool calls - this should be the final response
+                    logger.info(f"User {user_id}: No tool calls in iteration {iteration}")
+
+                    # If model returned empty response, force it to generate one
+                    if not response_text:
+                        logger.info(f"User {user_id}: Empty response, forcing final answer")
+                        # Add instruction to generate final answer
+                        current_messages.append({
+                            "role": "user",
+                            "content": "Based on all the information gathered above, provide a complete answer now."
+                        })
+                        response_text, _ = await self.openrouter_client.chat_completion(
+                            messages=current_messages,
+                            tools=None,
+                            tool_choice=None
+                        )
                     break
 
                 logger.info(f"User {user_id}: Processing {len(tool_calls)} tool calls")
