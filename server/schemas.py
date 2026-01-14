@@ -32,3 +32,16 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(..., description="Error message")
     detail: Optional[str] = Field(None, description="Detailed error information")
+
+
+class ReviewPRRequest(BaseModel):
+    """Request model for PR review endpoint."""
+
+    pr_number: int = Field(..., description="Pull Request number to review")
+
+
+class ReviewPRResponse(BaseModel):
+    """Response model for PR review endpoint."""
+
+    review: str = Field(..., description="Code review text with file:line references")
+    tool_calls_count: int = Field(default=0, description="Number of MCP tool calls made")

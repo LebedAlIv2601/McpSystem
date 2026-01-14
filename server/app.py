@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from auth import verify_api_key
-from schemas import ChatRequest, ChatResponse, HealthResponse, ErrorResponse
+from schemas import ChatRequest, ChatResponse, HealthResponse, ErrorResponse, ReviewPRRequest, ReviewPRResponse
 from chat_service import ChatService
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,53 @@ async def chat(
 
     except Exception as e:
         logger.error(f"Chat processing error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.post(
+    "/api/review-pr",
+    response_model=ReviewPRResponse,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid API key"},
+        503: {"model": ErrorResponse, "description": "Service unavailable"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    },
+    summary="Review Pull Request",
+    description="Perform AI-powered code review for a specific pull request. Returns detailed review with file:line references."
+)
+async def review_pr(
+    request: ReviewPRRequest,
+    api_key: str = Depends(verify_api_key),
+    chat_service: ChatService = Depends(get_chat_service)
+) -> ReviewPRResponse:
+    """
+    Perform code review for a pull request.
+
+    Args:
+        request: Review request with PR number
+        api_key: Validated API key
+        chat_service: Chat service instance
+
+    Returns:
+        ReviewPRResponse with review text and tool call count
+    """
+    logger.info(f"PR review request for #{request.pr_number}")
+
+    try:
+        review_text, tool_calls_count = await chat_service.review_pr(
+            pr_number=request.pr_number
+        )
+
+        return ReviewPRResponse(
+            review=review_text,
+            tool_calls_count=tool_calls_count
+        )
+
+    except Exception as e:
+        logger.error(f"PR review error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)

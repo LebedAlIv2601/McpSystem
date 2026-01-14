@@ -9,6 +9,7 @@ from config import ESSENTIAL_TOOLS, MCP_USED_INDICATOR
 from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
 from mcp_manager import MCPManager
+from prompts import get_pr_review_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -211,3 +212,110 @@ Respond in user's language."""
     def get_tools_count(self) -> int:
         """Get number of available tools."""
         return len(self.openrouter_tools)
+
+    async def review_pr(self, pr_number: int) -> Tuple[str, int]:
+        """
+        Perform code review for a pull request.
+
+        Args:
+            pr_number: Pull request number to review
+
+        Returns:
+            Tuple of (review_text, tool_calls_count)
+        """
+        logger.info(f"Starting PR review for #{pr_number}")
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        system_prompt = {
+            "role": "system",
+            "content": get_pr_review_prompt(pr_number, current_date)
+        }
+
+        messages = [system_prompt]
+        total_tool_calls = 0
+
+        try:
+            max_iterations = 15
+            iteration = 0
+            response_text = None
+
+            while iteration < max_iterations:
+                iteration += 1
+                logger.info(f"PR Review #{pr_number}: iteration {iteration}/{max_iterations}")
+
+                is_last_iteration = (iteration == max_iterations)
+                current_tools = None if is_last_iteration else self.openrouter_tools
+                current_tool_choice = None if is_last_iteration else "auto"
+
+                response_text, tool_calls = await self.openrouter_client.chat_completion(
+                    messages=messages,
+                    tools=current_tools,
+                    tool_choice=current_tool_choice
+                )
+
+                if not tool_calls:
+                    logger.info(f"PR Review #{pr_number}: No tool calls, finalizing")
+
+                    if not response_text:
+                        logger.info(f"PR Review #{pr_number}: Empty response, forcing final answer")
+                        messages.append({
+                            "role": "user",
+                            "content": "Based on all the information gathered, provide the complete code review now."
+                        })
+                        response_text, _ = await self.openrouter_client.chat_completion(
+                            messages=messages,
+                            tools=None,
+                            tool_choice=None
+                        )
+                    break
+
+                logger.info(f"PR Review #{pr_number}: Processing {len(tool_calls)} tool calls")
+                total_tool_calls += len(tool_calls)
+
+                tool_results = []
+                for tool_call in tool_calls:
+                    tool_name = tool_call["name"]
+                    tool_args = tool_call["arguments"]
+
+                    logger.info(f"PR Review #{pr_number}: Executing tool {tool_name}")
+
+                    try:
+                        result = await self.mcp_manager.call_tool(tool_name, tool_args)
+                        result_content = result["result"]
+
+                        tool_results.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": result_content
+                        })
+                    except Exception as e:
+                        logger.error(f"PR Review #{pr_number}: Tool error: {e}", exc_info=True)
+                        tool_results.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": json.dumps({"error": str(e)})
+                        })
+
+                assistant_msg = {"role": "assistant", "content": response_text or ""}
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": json.dumps(tc["arguments"])
+                        }
+                    }
+                    for tc in tool_calls
+                ]
+                messages.append(assistant_msg)
+
+                for tr in tool_results:
+                    messages.append(tr)
+
+            logger.info(f"PR Review #{pr_number}: Completed with {total_tool_calls} tool calls")
+            return response_text or "Failed to generate review.", total_tool_calls
+
+        except Exception as e:
+            logger.error(f"PR Review #{pr_number}: Error: {e}", exc_info=True)
+            return f"Error during review: {str(e)}", total_tool_calls
