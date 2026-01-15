@@ -190,12 +190,8 @@ class WeeekClient:
             "title": title,
             "description": description,
             "priority": priority,
-            "locations": [
-                {
-                    "projectId": self.project_id,
-                    "boardColumnId": self.column_ids["Open"],
-                }
-            ],
+            "boardId": self.board_id,
+            "boardColumnId": self.column_ids["Open"],
         }
 
         logger.info(f"Creating task: {title}")
