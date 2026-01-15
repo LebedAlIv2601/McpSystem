@@ -34,7 +34,6 @@ GITHUB_COPILOT_MCP_URL = "https://api.githubcopilot.com/mcp/"
 
 # Weeek Configuration
 WEEEK_API_TOKEN = os.getenv("WEEEK_API_TOKEN", "")
-WEEEK_PROJECT_ID = int(os.getenv("WEEEK_PROJECT_ID", "0"))
 WEEEK_BOARD_ID = int(os.getenv("WEEEK_BOARD_ID", "0"))
 WEEEK_COLUMN_OPEN_ID = int(os.getenv("WEEEK_COLUMN_OPEN_ID", "0"))
 WEEEK_COLUMN_IN_PROGRESS_ID = int(os.getenv("WEEEK_COLUMN_IN_PROGRESS_ID", "0"))
@@ -81,7 +80,6 @@ MCP_SERVERS = [
         "env": {
             **os.environ.copy(),
             "WEEEK_API_TOKEN": WEEEK_API_TOKEN,
-            "WEEEK_PROJECT_ID": str(WEEEK_PROJECT_ID),
             "WEEEK_BOARD_ID": str(WEEEK_BOARD_ID),
             "WEEEK_COLUMN_OPEN_ID": str(WEEEK_COLUMN_OPEN_ID),
             "WEEEK_COLUMN_IN_PROGRESS_ID": str(WEEEK_COLUMN_IN_PROGRESS_ID),

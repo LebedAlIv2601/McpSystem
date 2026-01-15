@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 # Configuration from environment variables
 WEEEK_API_TOKEN = os.getenv("WEEEK_API_TOKEN", "")
-WEEEK_PROJECT_ID = int(os.getenv("WEEEK_PROJECT_ID", "0"))
 WEEEK_BOARD_ID = int(os.getenv("WEEEK_BOARD_ID", "0"))
 WEEEK_COLUMN_OPEN_ID = int(os.getenv("WEEEK_COLUMN_OPEN_ID", "0"))
 WEEEK_COLUMN_IN_PROGRESS_ID = int(os.getenv("WEEEK_COLUMN_IN_PROGRESS_ID", "0"))
@@ -38,7 +37,6 @@ def get_weeek_client() -> WeeekClient:
     if weeek_client is None:
         weeek_client = WeeekClient(
             api_token=WEEEK_API_TOKEN,
-            project_id=WEEEK_PROJECT_ID,
             board_id=WEEEK_BOARD_ID,
             column_open_id=WEEEK_COLUMN_OPEN_ID,
             column_in_progress_id=WEEEK_COLUMN_IN_PROGRESS_ID,
@@ -235,7 +233,6 @@ async def handle_move_task(arguments: dict) -> list[TextContent]:
 async def main():
     """Run the MCP server."""
     logger.info("Starting Weeek MCP server")
-    logger.info(f"Project ID: {WEEEK_PROJECT_ID}")
     logger.info(f"Board ID: {WEEEK_BOARD_ID}")
     logger.info(f"Column IDs: Open={WEEEK_COLUMN_OPEN_ID}, In Progress={WEEEK_COLUMN_IN_PROGRESS_ID}, Done={WEEEK_COLUMN_DONE_ID}")
 

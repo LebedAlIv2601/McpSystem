@@ -16,14 +16,12 @@ class WeeekClient:
     def __init__(
         self,
         api_token: str,
-        project_id: int,
         board_id: int,
         column_open_id: int,
         column_in_progress_id: int,
         column_done_id: int,
     ):
         self.api_token = api_token
-        self.project_id = project_id
         self.board_id = board_id
         self.column_ids = {
             "Open": column_open_id,
@@ -73,11 +71,10 @@ class WeeekClient:
         client = await self._get_client()
 
         params = {
-            "projectId": self.project_id,
             "boardId": self.board_id,
         }
 
-        logger.info(f"Fetching tasks: projectId={self.project_id}, boardId={self.board_id}")
+        logger.info(f"Fetching tasks: boardId={self.board_id}")
         response = await client.get("/tm/tasks", params=params)
 
         if response.status_code != 200:
