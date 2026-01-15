@@ -109,26 +109,27 @@ async def list_tools() -> list[Tool]:
                 "required": []
             }
         ),
-        Tool(
-            name="get_project_structure",
-            description="Get the project directory structure as a tree. Use this FIRST to find file paths before using get_file_contents.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Starting path (e.g., 'app/src/main/java'). Empty for root.",
-                        "default": ""
-                    },
-                    "max_depth": {
-                        "type": "integer",
-                        "description": "Max depth to traverse (default: 4)",
-                        "default": 4
-                    }
-                },
-                "required": []
-            }
-        ),
+        # NOTE: get_project_structure is disabled but kept for future use
+        # Tool(
+        #     name="get_project_structure",
+        #     description="Get the project directory structure as a tree. Use this FIRST to find file paths before using get_file_contents.",
+        #     inputSchema={
+        #         "type": "object",
+        #         "properties": {
+        #             "path": {
+        #                 "type": "string",
+        #                 "description": "Starting path (e.g., 'app/src/main/java'). Empty for root.",
+        #                 "default": ""
+        #             },
+        #             "max_depth": {
+        #                 "type": "integer",
+        #                 "description": "Max depth to traverse (default: 4)",
+        #                 "default": 4
+        #             }
+        #         },
+        #         "required": []
+        #     }
+        # ),
     ]
 
 

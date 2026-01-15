@@ -29,12 +29,21 @@ GITHUB_OWNER = os.getenv("GITHUB_OWNER", "LebedAlIv2601")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "EasyPomodoro")
 SPECS_PATH = os.getenv("SPECS_PATH", "specs")
 
-# GitHub Copilot MCP Configuration
+# GitHub Copilot MCP Configuration (disabled, but kept for future use)
 GITHUB_COPILOT_MCP_URL = "https://api.githubcopilot.com/mcp/"
+
+# Weeek Configuration
+WEEEK_API_TOKEN = os.getenv("WEEEK_API_TOKEN", "")
+WEEEK_PROJECT_ID = int(os.getenv("WEEEK_PROJECT_ID", "0"))
+WEEEK_BOARD_ID = int(os.getenv("WEEEK_BOARD_ID", "0"))
+WEEEK_COLUMN_OPEN_ID = int(os.getenv("WEEEK_COLUMN_OPEN_ID", "0"))
+WEEEK_COLUMN_IN_PROGRESS_ID = int(os.getenv("WEEEK_COLUMN_IN_PROGRESS_ID", "0"))
+WEEEK_COLUMN_DONE_ID = int(os.getenv("WEEEK_COLUMN_DONE_ID", "0"))
 
 # Paths
 PYTHON_INTERPRETER = Path(__file__).parent / "mcp_rag" / ".venv" / "bin" / "python"
 MCP_RAG_SERVER_PATH = Path(__file__).parent / "mcp_rag" / "server.py"
+MCP_WEEEK_SERVER_PATH = Path(__file__).parent / "mcp_weeek" / "server.py"
 
 # Use system python if venv doesn't exist
 if not PYTHON_INTERPRETER.exists():
@@ -42,13 +51,14 @@ if not PYTHON_INTERPRETER.exists():
     PYTHON_INTERPRETER = Path(sys.executable)
 
 # MCP Servers Configuration
+# NOTE: github_copilot is disabled but kept for future use
+# {
+#     "name": "github_copilot",
+#     "transport": "http",
+#     "url": GITHUB_COPILOT_MCP_URL,
+#     "auth_token": GITHUB_TOKEN
+# },
 MCP_SERVERS = [
-    {
-        "name": "github_copilot",
-        "transport": "http",
-        "url": GITHUB_COPILOT_MCP_URL,
-        "auth_token": GITHUB_TOKEN
-    },
     {
         "name": "rag_specs",
         "transport": "stdio",
@@ -62,6 +72,21 @@ MCP_SERVERS = [
             "SPECS_PATH": SPECS_PATH,
             "OPENROUTER_API_KEY": OPENROUTER_API_KEY
         }
+    },
+    {
+        "name": "weeek_tasks",
+        "transport": "stdio",
+        "command": str(PYTHON_INTERPRETER),
+        "args": [str(MCP_WEEEK_SERVER_PATH)],
+        "env": {
+            **os.environ.copy(),
+            "WEEEK_API_TOKEN": WEEEK_API_TOKEN,
+            "WEEEK_PROJECT_ID": str(WEEEK_PROJECT_ID),
+            "WEEEK_BOARD_ID": str(WEEEK_BOARD_ID),
+            "WEEEK_COLUMN_OPEN_ID": str(WEEEK_COLUMN_OPEN_ID),
+            "WEEEK_COLUMN_IN_PROGRESS_ID": str(WEEEK_COLUMN_IN_PROGRESS_ID),
+            "WEEEK_COLUMN_DONE_ID": str(WEEEK_COLUMN_DONE_ID),
+        }
     }
 ]
 
@@ -73,23 +98,25 @@ TOOL_CALL_TIMEOUT = 120.0
 
 # Essential tools filter - only these tools will be sent to the model
 ESSENTIAL_TOOLS = [
-    # RAG MCP - project structure (use first!)
-    "get_project_structure",
-    # GitHub Copilot MCP - file operations
-    "get_file_contents",
-    # GitHub Copilot MCP - commits
-    "list_commits",
-    "get_commit",
-    # GitHub Copilot MCP - issues
-    "list_issues",
-    "issue_read",
-    # GitHub Copilot MCP - pull requests
-    "list_pull_requests",
-    "pull_request_read",
     # RAG MCP - documentation
     "rag_query",
     "list_specs",
     "get_spec_content",
+    # NOTE: get_project_structure is disabled but kept for future use
+    # "get_project_structure",
+    # Weeek MCP - task management
+    "list_tasks",
+    "get_task_details",
+    "create_task",
+    "move_task",
+    # NOTE: GitHub Copilot MCP tools are disabled but kept for future use
+    # "get_file_contents",
+    # "list_commits",
+    # "get_commit",
+    # "list_issues",
+    # "issue_read",
+    # "list_pull_requests",
+    # "pull_request_read",
 ]
 
 # Response indicator
