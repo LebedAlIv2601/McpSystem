@@ -2,6 +2,7 @@
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -10,8 +11,17 @@ from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
 from mcp_manager import MCPManager
 from prompts import get_pr_review_prompt
+from build_state import get_build_state_manager
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class BuildRequestInfo:
+    """Info about a triggered build request."""
+    workflow_run_id: int
+    branch: str
+    user_id: str
 
 
 class ChatService:
@@ -39,7 +49,7 @@ class ChatService:
         self.openrouter_tools = self.openrouter_client.convert_mcp_tools_to_openrouter(filtered_tools)
         logger.info(f"Chat service initialized with {len(self.openrouter_tools)} tools")
 
-    async def process_message(self, user_id: str, message: str) -> Tuple[str, int, bool]:
+    async def process_message(self, user_id: str, message: str) -> Tuple[str, int, bool, Optional[BuildRequestInfo]]:
         """
         Process user message and return response.
 
@@ -48,7 +58,7 @@ class ChatService:
             message: User message text
 
         Returns:
-            Tuple of (response_text, tool_calls_count, mcp_was_used)
+            Tuple of (response_text, tool_calls_count, mcp_was_used, build_request)
         """
         logger.info(f"User {user_id}: Processing message: {message[:100]}...")
 
@@ -60,23 +70,26 @@ class ChatService:
         self.conversation_manager.add_message(user_id, "user", message)
 
         # Process with OpenRouter
-        response_text, tool_calls_count, mcp_was_used = await self._process_with_openrouter(user_id)
+        response_text, tool_calls_count, mcp_was_used, build_request = await self._process_with_openrouter(user_id)
 
         if response_text:
             # Clean response for storage (remove indicator)
             clean_response = response_text.replace(MCP_USED_INDICATOR, "").strip()
             self.conversation_manager.add_message(user_id, "assistant", clean_response)
 
-        return response_text or "Sorry, something went wrong.", tool_calls_count, mcp_was_used
+        return response_text or "Sorry, something went wrong.", tool_calls_count, mcp_was_used, build_request
 
-    async def _process_with_openrouter(self, user_id: str) -> Tuple[Optional[str], int, bool]:
+    async def _process_with_openrouter(self, user_id: str) -> Tuple[Optional[str], int, bool, Optional[BuildRequestInfo]]:
         """Process message with OpenRouter and MCP tools."""
         conversation_history = self.conversation_manager.get_history(user_id)
         current_date = datetime.now().strftime("%Y-%m-%d")
+        build_state = get_build_state_manager()
+        build_request: Optional[BuildRequestInfo] = None
 
         system_prompt = {
             "role": "system",
             "content": f"""Current date: {current_date}.
+User ID: {user_id}
 
 You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/EasyPomodoro).
 
@@ -91,11 +104,13 @@ You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/E
 2. **get_file_contents** - Read file content (owner="LebedAlIv2601", repo="EasyPomodoro", path="...")
 3. **rag_query** - Search project documentation semantically
 4. **list_commits**, **list_issues**, **list_pull_requests** - GitHub items
+5. **build_apk** - Build APK from specified branch. ALWAYS pass user_id="{user_id}" when calling this tool.
 
 **WORKFLOW:**
 1. For code questions: get_project_structure -> get_file_contents (repeat as needed)
 2. For architecture/design: rag_query
-3. ONLY respond with final answer AFTER gathering ALL necessary information
+3. For APK build requests: call build_apk with branch and user_id="{user_id}"
+4. ONLY respond with final answer AFTER gathering ALL necessary information
 
 Respond in user's language."""
         }
@@ -157,14 +172,44 @@ Respond in user's language."""
 
                     logger.info(f"User {user_id}: Executing tool {tool_name}")
 
+                    # Special handling for build_apk - check for active builds
+                    if tool_name == "build_apk":
+                        if build_state.has_active_build(user_id):
+                            active = build_state.get_active_build(user_id)
+                            tool_results.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call["id"],
+                                "content": json.dumps({
+                                    "error": f"You already have an active build in progress (branch: {active.branch}). Please wait for it to complete."
+                                })
+                            })
+                            continue
+
+                        # Ensure user_id is passed to the tool
+                        tool_args["user_id"] = user_id
+
                     try:
                         result = await self.mcp_manager.call_tool(tool_name, tool_args)
                         result_content = result["result"]
 
                         try:
                             parsed_result = json.loads(result_content)
-                            if isinstance(parsed_result, dict) and "error" in parsed_result:
-                                logger.error(f"User {user_id}: MCP tool returned error: {parsed_result['error']}")
+                            if isinstance(parsed_result, dict):
+                                if "error" in parsed_result:
+                                    logger.error(f"User {user_id}: MCP tool returned error: {parsed_result['error']}")
+                                # Extract build_request from build_apk result
+                                elif tool_name == "build_apk" and parsed_result.get("success"):
+                                    workflow_run_id = parsed_result.get("workflow_run_id")
+                                    branch = parsed_result.get("branch")
+                                    if workflow_run_id and branch:
+                                        build_request = BuildRequestInfo(
+                                            workflow_run_id=workflow_run_id,
+                                            branch=branch,
+                                            user_id=user_id
+                                        )
+                                        # Register active build
+                                        build_state.start_build(user_id, workflow_run_id, branch)
+                                        logger.info(f"User {user_id}: Build request captured: {build_request}")
                         except (json.JSONDecodeError, ValueError):
                             pass
 
@@ -203,11 +248,11 @@ Respond in user's language."""
             if response_text and mcp_was_used:
                 response_text += MCP_USED_INDICATOR
 
-            return response_text, total_tool_calls, mcp_was_used
+            return response_text, total_tool_calls, mcp_was_used, build_request
 
         except Exception as e:
             logger.error(f"User {user_id}: OpenRouter processing error: {e}", exc_info=True)
-            return None, 0, False
+            return None, 0, False, None
 
     def get_tools_count(self) -> int:
         """Get number of available tools."""

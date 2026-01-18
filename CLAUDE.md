@@ -8,8 +8,9 @@ This system provides:
 1. **Telegram Bot** - Interactive chat for project questions
 2. **REST API** - Backend with MCP integration for AI-powered responses
 3. **PR Code Review** - Automated pull request reviews via API
-4. Browse and analyze project code via GitHub Copilot MCP
-5. Search project documentation using RAG (Retrieval Augmented Generation)
+4. **APK Build Delivery** - Build and send debug APK to Telegram from any branch
+5. Browse and analyze project code via GitHub Copilot MCP
+6. Search project documentation using RAG (Retrieval Augmented Generation)
 
 ## Architecture
 
@@ -84,7 +85,28 @@ General chat endpoint for project questions.
 {
   "response": "string",
   "tool_calls_count": 0,
-  "mcp_used": false
+  "mcp_used": false,
+  "build_request": {
+    "workflow_run_id": 12345,
+    "branch": "master",
+    "user_id": "123456"
+  }
+}
+```
+
+Note: `build_request` is only present when AI triggered an APK build.
+
+### POST /api/build-complete
+
+Notifies backend that a build has completed (called by client).
+
+**Parameters:**
+- `user_id` - User whose build completed
+
+**Response:**
+```json
+{
+  "status": "ok"
 }
 ```
 
@@ -186,6 +208,7 @@ jobs:
 - `prompts.py` - System prompts for different tasks
 - `schemas.py` - Pydantic models for API
 - `conversation.py` - Per-user conversation history
+- `build_state.py` - In-memory state for active builds
 - `auth.py` - API key authentication
 - `config.py` - Configuration and environment variables
 - `logger.py` - Logging configuration
@@ -196,6 +219,8 @@ jobs:
 - `main.py` - Application entry point
 - `bot.py` - Telegram bot handlers
 - `backend_client.py` - HTTP client for backend API
+- `github_client.py` - GitHub API client for build polling and artifact download
+- `build_handler.py` - Build polling and APK delivery to Telegram
 - `config.py` - Bot configuration
 - `logger.py` - Logging configuration
 
@@ -230,6 +255,7 @@ jobs:
 - `get_spec_content` - Get full content of a spec file
 - `rebuild_index` - Rebuild the RAG index
 - `get_project_structure` - Get directory tree
+- `build_apk` - Trigger APK build from specified branch
 
 **Target Repository:** `LebedAlIv2601/EasyPomodoro`
 
@@ -319,6 +345,7 @@ Create a Classic PAT with these scopes:
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token |
 | `BACKEND_URL` | Backend server URL |
 | `BACKEND_API_KEY` | API key for backend |
+| `GITHUB_TOKEN` | GitHub PAT for APK build functionality |
 
 ## Technology Stack
 

@@ -90,6 +90,8 @@ ESSENTIAL_TOOLS = [
     "rag_query",
     "list_specs",
     "get_spec_content",
+    # RAG MCP - build APK
+    "build_apk",
 ]
 
 # Response indicator

@@ -5,7 +5,9 @@ import json
 import logging
 import os
 import sys
+import time
 
+import httpx
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
@@ -25,6 +27,11 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_OWNER = os.getenv("GITHUB_OWNER", "LebedAlIv2601")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "EasyPomodoro")
 SPECS_PATH = os.getenv("SPECS_PATH", "specs")
+
+# Build configuration (hardcoded per spec)
+WORKFLOW_FILE = "build-apk.yml"
+DEFAULT_BRANCH = "master"
+GITHUB_API_BASE = "https://api.github.com"
 
 server = Server("rag-specs")
 
@@ -129,6 +136,25 @@ async def list_tools() -> list[Tool]:
                 "required": []
             }
         ),
+        Tool(
+            name="build_apk",
+            description="Trigger Android APK build for EasyPomodoro project. Use this when user asks to build APK, create a build, or get an APK file. The build runs on GitHub Actions and the APK will be sent to the user's Telegram chat.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "branch": {
+                        "type": "string",
+                        "description": "Git branch to build from. Defaults to 'master' if not specified.",
+                        "default": "master"
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "Telegram user ID who requested the build (passed from context)"
+                    }
+                },
+                "required": ["user_id"]
+            }
+        ),
     ]
 
 
@@ -148,6 +174,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return await handle_rebuild_index()
         elif name == "get_project_structure":
             return await handle_get_project_structure(arguments)
+        elif name == "build_apk":
+            return await handle_build_apk(arguments)
         else:
             return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
     except Exception as e:
@@ -339,6 +367,114 @@ async def handle_get_project_structure(arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=json.dumps(response, ensure_ascii=False, indent=2))]
     except Exception as e:
         return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
+
+
+async def handle_build_apk(arguments: dict) -> list[TextContent]:
+    """Handle build_apk tool call - triggers GitHub Actions workflow."""
+    branch = arguments.get("branch", DEFAULT_BRANCH)
+    user_id = arguments.get("user_id", "")
+
+    if not user_id:
+        return [TextContent(type="text", text=json.dumps({
+            "error": "user_id is required"
+        }))]
+
+    if not GITHUB_TOKEN:
+        return [TextContent(type="text", text=json.dumps({
+            "error": "GitHub token not configured"
+        }))]
+
+    logger.info(f"Build APK requested: branch={branch}, user_id={user_id}")
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0),
+        headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json",
+            "X-GitHub-Api-Version": "2022-11-28"
+        }
+    ) as client:
+        # 1. Validate branch exists
+        branch_url = f"{GITHUB_API_BASE}/repos/{GITHUB_OWNER}/{GITHUB_REPO}/branches/{branch}"
+        try:
+            branch_response = await client.get(branch_url)
+            if branch_response.status_code == 404:
+                return [TextContent(type="text", text=json.dumps({
+                    "error": f"Branch '{branch}' not found in repository {GITHUB_OWNER}/{GITHUB_REPO}"
+                }))]
+            branch_response.raise_for_status()
+            logger.info(f"Branch '{branch}' validated")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return [TextContent(type="text", text=json.dumps({
+                    "error": f"Branch '{branch}' not found in repository {GITHUB_OWNER}/{GITHUB_REPO}"
+                }))]
+            return [TextContent(type="text", text=json.dumps({
+                "error": f"Failed to validate branch: {e.response.status_code}"
+            }))]
+
+        # 2. Trigger workflow_dispatch
+        dispatch_url = f"{GITHUB_API_BASE}/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/{WORKFLOW_FILE}/dispatches"
+        dispatch_payload = {
+            "ref": branch,
+            "inputs": {
+                "branch": branch
+            }
+        }
+
+        try:
+            dispatch_response = await client.post(dispatch_url, json=dispatch_payload)
+            if dispatch_response.status_code == 404:
+                return [TextContent(type="text", text=json.dumps({
+                    "error": f"Workflow '{WORKFLOW_FILE}' not found. Make sure it exists in .github/workflows/"
+                }))]
+            dispatch_response.raise_for_status()
+            logger.info(f"Workflow dispatch triggered for branch '{branch}'")
+        except httpx.HTTPStatusError as e:
+            return [TextContent(type="text", text=json.dumps({
+                "error": f"Failed to trigger workflow: {e.response.status_code} - {e.response.text}"
+            }))]
+
+        # 3. Get the workflow run ID (need to wait briefly and poll)
+        await asyncio.sleep(2)
+
+        runs_url = f"{GITHUB_API_BASE}/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/{WORKFLOW_FILE}/runs"
+        params = {"event": "workflow_dispatch", "per_page": 5}
+
+        workflow_run_id = None
+        for attempt in range(5):
+            try:
+                runs_response = await client.get(runs_url, params=params)
+                runs_response.raise_for_status()
+                runs_data = runs_response.json()
+
+                for run in runs_data.get("workflow_runs", []):
+                    if run.get("head_branch") == branch and run.get("status") in ["queued", "in_progress"]:
+                        workflow_run_id = run.get("id")
+                        logger.info(f"Found workflow run: {workflow_run_id}")
+                        break
+
+                if workflow_run_id:
+                    break
+
+                await asyncio.sleep(2)
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1} to get workflow run failed: {e}")
+                await asyncio.sleep(2)
+
+        if not workflow_run_id:
+            return [TextContent(type="text", text=json.dumps({
+                "error": "Workflow triggered but could not retrieve run ID. Build may still be running."
+            }))]
+
+        # Return success with workflow_run_id for client to poll
+        return [TextContent(type="text", text=json.dumps({
+            "success": True,
+            "workflow_run_id": workflow_run_id,
+            "branch": branch,
+            "user_id": user_id,
+            "message": f"Build started for branch '{branch}'. APK will be sent when ready."
+        }))]
 
 
 async def main():

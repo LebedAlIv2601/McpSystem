@@ -8,8 +8,9 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TimedOut, NetworkError
 
-from config import TELEGRAM_BOT_TOKEN, WELCOME_MESSAGE, ERROR_MESSAGE
+from config import TELEGRAM_BOT_TOKEN, WELCOME_MESSAGE, ERROR_MESSAGE, GITHUB_TOKEN
 from backend_client import BackendClient
+from build_handler import BuildHandler
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class TelegramBot:
     def __init__(self):
         self.backend_client = BackendClient()
         self.application: Optional[Application] = None
+        self.build_handler: Optional[BuildHandler] = None
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
@@ -45,6 +47,7 @@ class TelegramBot:
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle user messages."""
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
         user_message = update.message.text
 
         logger.info(f"User {user_id}: Received message: {user_message}")
@@ -56,7 +59,7 @@ class TelegramBot:
             thinking_msg = await retry_telegram_call(update.message.reply_text, "Думаю...")
 
             # Send message to backend
-            response_text, mcp_used = await self.backend_client.send_message(
+            result = await self.backend_client.send_message(
                 user_id=str(user_id),
                 message=user_message
             )
@@ -66,10 +69,19 @@ class TelegramBot:
             thinking_msg = None
 
             # Send response
-            if response_text:
-                await retry_telegram_call(update.message.reply_text, response_text)
+            if result.response:
+                await retry_telegram_call(update.message.reply_text, result.response)
             else:
                 await retry_telegram_call(update.message.reply_text, ERROR_MESSAGE)
+
+            # Handle build request if present
+            if result.build_request and self.build_handler:
+                await self.build_handler.handle_build_request(
+                    chat_id=chat_id,
+                    user_id=str(user_id),
+                    workflow_run_id=result.build_request.workflow_run_id,
+                    branch=result.build_request.branch
+                )
 
         except Exception as e:
             logger.error(f"User {user_id}: Error handling message: {e}", exc_info=True)
@@ -97,6 +109,17 @@ class TelegramBot:
         try:
             await self.application.initialize()
             await self.application.start()
+
+            # Initialize build handler after application is ready (need bot instance)
+            if GITHUB_TOKEN:
+                self.build_handler = BuildHandler(
+                    bot=self.application.bot,
+                    backend_client=self.backend_client
+                )
+                logger.info("Build handler initialized")
+            else:
+                logger.warning("GITHUB_TOKEN not set - build functionality disabled")
+
             await self.application.updater.start_polling()
             logger.info("Telegram bot is running")
         except Exception as e:
@@ -105,6 +128,10 @@ class TelegramBot:
 
     async def stop(self) -> None:
         """Stop the Telegram bot."""
+        # Close build handler
+        if self.build_handler:
+            await self.build_handler.close()
+
         # Close backend client
         await self.backend_client.close()
 

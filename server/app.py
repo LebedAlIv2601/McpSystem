@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from auth import verify_api_key
-from schemas import ChatRequest, ChatResponse, HealthResponse, ErrorResponse, ReviewPRRequest, ReviewPRResponse
+from schemas import ChatRequest, ChatResponse, HealthResponse, ErrorResponse, ReviewPRRequest, ReviewPRResponse, BuildRequest
 from chat_service import ChatService
 
 logger = logging.getLogger(__name__)
@@ -61,15 +61,26 @@ async def chat(
     logger.info(f"Chat request from user {request.user_id}")
 
     try:
-        response_text, tool_calls_count, mcp_used = await chat_service.process_message(
+        response_text, tool_calls_count, mcp_used, build_request_info = await chat_service.process_message(
             user_id=request.user_id,
             message=request.message
         )
 
+        # Convert BuildRequestInfo to BuildRequest schema if present
+        build_request = None
+        if build_request_info:
+            build_request = BuildRequest(
+                workflow_run_id=build_request_info.workflow_run_id,
+                branch=build_request_info.branch,
+                user_id=build_request_info.user_id
+            )
+            logger.info(f"Build request included in response: {build_request}")
+
         return ChatResponse(
             response=response_text,
             tool_calls_count=tool_calls_count,
-            mcp_used=mcp_used
+            mcp_used=mcp_used,
+            build_request=build_request
         )
 
     except Exception as e:
@@ -152,3 +163,31 @@ async def health_check() -> HealthResponse:
         mcp_connected=True,
         tools_count=_chat_service.get_tools_count()
     )
+
+
+@router.post(
+    "/api/build-complete",
+    summary="Mark build as complete",
+    description="Called by client when build completes (success or failure) to clear active build state."
+)
+async def build_complete(
+    user_id: str,
+    api_key: str = Depends(verify_api_key)
+) -> dict:
+    """
+    Mark a user's build as complete.
+
+    Args:
+        user_id: User whose build completed
+        api_key: Validated API key
+
+    Returns:
+        Success status
+    """
+    from build_state import get_build_state_manager
+
+    build_state = get_build_state_manager()
+    build_state.complete_build(user_id)
+    logger.info(f"Build marked complete for user {user_id}")
+
+    return {"status": "ok"}

@@ -11,12 +11,21 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="User message text")
 
 
+class BuildRequest(BaseModel):
+    """Build request info returned when AI triggers a build."""
+
+    workflow_run_id: int = Field(..., description="GitHub Actions workflow run ID")
+    branch: str = Field(..., description="Git branch being built")
+    user_id: str = Field(..., description="User who requested the build")
+
+
 class ChatResponse(BaseModel):
     """Response model for chat endpoint."""
 
     response: str = Field(..., description="Assistant response text")
     tool_calls_count: int = Field(default=0, description="Number of tool calls made")
     mcp_used: bool = Field(default=False, description="Whether MCP tools were used")
+    build_request: Optional[BuildRequest] = Field(default=None, description="Build request if AI triggered a build")
 
 
 class HealthResponse(BaseModel):
