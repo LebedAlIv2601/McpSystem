@@ -7,6 +7,7 @@ import sys
 
 from logger import setup_logging
 from bot import TelegramBot
+from ollama_manager import OllamaManager
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ class Application:
     """Main application orchestrator."""
 
     def __init__(self):
+        self.ollama_manager: OllamaManager = None
         self.bot: TelegramBot = None
         self.shutdown_event = asyncio.Event()
 
@@ -22,16 +24,12 @@ class Application:
         """Initialize and start all components."""
         logger.info("Application startup initiated")
 
+        # Start Ollama manager
+        self.ollama_manager = OllamaManager()
+        await self.ollama_manager.start()
+
+        # Start Telegram bot
         self.bot = TelegramBot()
-
-        # Check backend health
-        logger.info("Checking backend health...")
-        is_healthy = await self.bot.backend_client.health_check()
-        if is_healthy:
-            logger.info("Backend is healthy")
-        else:
-            logger.warning("Backend health check failed, but continuing...")
-
         await self.bot.run()
 
         logger.info("Application startup completed")
@@ -42,6 +40,9 @@ class Application:
 
         if self.bot:
             await self.bot.stop()
+
+        if self.ollama_manager:
+            self.ollama_manager.stop()
 
         logger.info("Application shutdown completed")
 

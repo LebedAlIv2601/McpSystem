@@ -193,9 +193,11 @@ jobs:
 ### 2. Telegram Bot Client (client/)
 
 **Files:**
-- `main.py` - Application entry point
+- `main.py` - Application entry point with Ollama lifecycle
 - `bot.py` - Telegram bot handlers
-- `backend_client.py` - HTTP client for backend API
+- `ollama_manager.py` - Ollama subprocess management
+- `ollama_client.py` - HTTP client for Ollama API
+- `backend_client.py` - (Legacy) HTTP client for backend API
 - `config.py` - Bot configuration
 - `logger.py` - Logging configuration
 
@@ -237,9 +239,10 @@ jobs:
 
 ### Prerequisites
 - Python 3.14+
-- OpenRouter API key
-- GitHub Personal Access Token
+- OpenRouter API key (for server)
+- GitHub Personal Access Token (for server)
 - Telegram bot token (for client)
+- Ollama (for client) - https://ollama.com
 
 ### Server Setup
 
@@ -277,20 +280,43 @@ python main.py
 
 ### Client Setup
 
-1. **Configure environment:**
+**Note:** Client now uses local Ollama instead of backend server.
+
+1. **Install Ollama:**
+```bash
+# Download and install from https://ollama.com
+# Or on macOS:
+brew install ollama
+```
+
+2. **Pull required model:**
+```bash
+ollama pull llama3.1:8b
+```
+
+3. **Install dependencies:**
 ```bash
 cd client
+pip install -r requirements.txt
+```
+
+4. **Configure environment:**
+```bash
 cp .env.example .env
 # Edit .env:
 # TELEGRAM_BOT_TOKEN=your_bot_token
-# BACKEND_URL=http://localhost:8000
-# BACKEND_API_KEY=same_as_server
 ```
 
-2. **Run client:**
+5. **Run client:**
 ```bash
-python main.py
+# From client/ directory
+../venv/bin/python main.py
 ```
+
+The bot will automatically:
+- Start Ollama subprocess if not running
+- Verify llama3.1:8b model is available
+- Shutdown Ollama on exit
 
 ### GitHub PAT Scopes
 
@@ -317,17 +343,16 @@ Create a Classic PAT with these scopes:
 | Variable | Description |
 |----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token |
-| `BACKEND_URL` | Backend server URL |
-| `BACKEND_API_KEY` | API key for backend |
 
 ## Technology Stack
 
 - **Python 3.14** - Main language
 - **FastAPI** - Backend API framework
 - **python-telegram-bot** - Telegram integration
+- **Ollama** - Local LLM inference (llama3.1:8b)
 - **MCP SDK** - Model Context Protocol (HTTP + stdio transports)
 - **httpx** - Async HTTP client
-- **OpenRouter** - LLM API access
+- **OpenRouter** - LLM API access (server only)
 - **Pydantic** - Data validation
 
 ## Deployment

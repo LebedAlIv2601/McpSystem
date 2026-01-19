@@ -13,27 +13,24 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN not found in .env file")
 
-# Backend Configuration
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
-if not BACKEND_API_KEY:
-    raise ValueError("BACKEND_API_KEY not found in .env file")
+# Backend Configuration (temporarily disabled, using local Ollama)
+# BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+# BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
+# if not BACKEND_API_KEY:
+#     raise ValueError("BACKEND_API_KEY not found in .env file")
 
 # Bot messages
-WELCOME_MESSAGE = """Welcome to EasyPomodoro Project Consultant!
+WELCOME_MESSAGE = """Добро пожаловать в EasyPomodoro Project Consultant!
 
-I'm here to help you understand the EasyPomodoro Android project.
+Я локальный AI-ассистент на базе Ollama (llama3.1:8b).
+Готов ответить на ваши вопросы о проекте EasyPomodoro.
 
-I have access to:
-- GitHub Copilot MCP - for browsing project code
-- RAG Documentation - for searching project specs
+Просто задайте мне любой вопрос!
 
-Just ask me anything about the project!
+Примеры:
+- Расскажи о проекте EasyPomodoro
+- Какие основные функции есть в приложении?
+- Помоги с Android разработкой
+- Объясни концепцию Pomodoro техники"""
 
-Examples:
-- What is the project architecture?
-- How does the timer feature work?
-- Show me the main activity code
-- What are the app's core features?"""
-
-ERROR_MESSAGE = "Sorry, something went wrong. Please try again."
+ERROR_MESSAGE = "Извините, произошла ошибка. Пожалуйста, попробуйте еще раз."
