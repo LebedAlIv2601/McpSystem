@@ -113,7 +113,8 @@ You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/E
 Respond in user's language."""
         }
 
-        messages_with_system = [system_prompt] + conversation_history
+        # messages_with_system = [system_prompt] + conversation_history
+        messages_with_system = conversation_history
         mcp_was_used = False
         total_tool_calls = 0
 
