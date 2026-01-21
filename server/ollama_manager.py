@@ -7,10 +7,9 @@ import signal
 import httpx
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from config import OLLAMA_URL, OLLAMA_MODEL
 
-OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "llama3.1:8b"
+logger = logging.getLogger(__name__)
 
 
 class OllamaManager:
@@ -22,6 +21,7 @@ class OllamaManager:
         self.model_name = OLLAMA_MODEL
         self.model_ready = False
         self._pull_task: Optional[asyncio.Task] = None
+        logger.info(f"OllamaManager initialized with model: {self.model_name}")
 
     async def _check_health(self) -> bool:
         """Check if Ollama is accessible."""
@@ -31,6 +31,32 @@ class OllamaManager:
                 return response.status_code == 200
         except Exception:
             return False
+
+    async def _check_disk_space(self) -> None:
+        """Check available disk space for Ollama models."""
+        try:
+            import shutil
+            import os
+
+            # Check space in OLLAMA_HOME (default: ~/.ollama)
+            ollama_home = os.path.expanduser(os.getenv("OLLAMA_HOME", "~/.ollama"))
+            stat = shutil.disk_usage(ollama_home)
+
+            total_gb = stat.total / (1024**3)
+            used_gb = stat.used / (1024**3)
+            free_gb = stat.free / (1024**3)
+            used_percent = (stat.used / stat.total) * 100
+
+            logger.info(f"Disk space at {ollama_home}:")
+            logger.info(f"  Total: {total_gb:.2f} GB")
+            logger.info(f"  Used:  {used_gb:.2f} GB ({used_percent:.1f}%)")
+            logger.info(f"  Free:  {free_gb:.2f} GB")
+
+            if free_gb < 2:
+                logger.error(f"WARNING: Very low disk space! Only {free_gb:.2f} GB free")
+                logger.error(f"Ollama models need several GB for download and unpacking")
+        except Exception as e:
+            logger.warning(f"Could not check disk space: {e}")
 
     async def _list_models(self) -> list:
         """List all available models in Ollama."""
@@ -92,7 +118,18 @@ class OllamaManager:
 
     async def _pull_model(self) -> bool:
         """Pull model from Ollama registry."""
-        logger.info(f"Pulling model {self.model_name} (this may take 5-10 minutes on first run)...")
+        # Model size estimates
+        model_sizes = {
+            "llama3.1:8b": "~4.5 GB compressed, ~8-9 GB total with unpacking",
+            "llama3.2:3b": "~2 GB compressed, ~3-4 GB total",
+            "phi3:mini": "~2.3 GB compressed, ~4 GB total",
+            "gemma2:2b": "~1.6 GB compressed, ~3 GB total",
+            "mistral:7b": "~4.1 GB compressed, ~7-8 GB total",
+        }
+        size_info = model_sizes.get(self.model_name, "size unknown")
+
+        logger.info(f"Pulling model {self.model_name} ({size_info})")
+        logger.info("This may take 5-10 minutes on first run...")
         logger.info("Note: App will start serving requests while model downloads in background")
 
         try:
@@ -157,6 +194,10 @@ class OllamaManager:
         """Pull model in background."""
         try:
             logger.info(f"Starting background pull of model {self.model_name}")
+
+            # Check disk space before pull
+            await self._check_disk_space()
+
             success = await self._pull_model()
             if success:
                 # Wait a bit for Ollama to register the model
@@ -168,8 +209,16 @@ class OllamaManager:
                     logger.info(f"Background model pull completed - model is ready")
                 else:
                     logger.error(f"Model pull succeeded but model still not found in Ollama")
+                    logger.error(f"This usually means insufficient disk space!")
+
+                    # Check disk space after failed pull
+                    await self._check_disk_space()
+
                     # Try to list available models for debugging
                     await self._list_models()
+
+                    logger.error(f"SOLUTION: Increase Railway volume size from 5GB to at least 10GB")
+                    logger.error(f"Model {self.model_name} requires ~8-9GB total space (download + unpacking)")
             else:
                 logger.error(f"Background model pull failed")
         except Exception as e:
@@ -236,6 +285,9 @@ class OllamaManager:
                             If False, block until model is available (legacy behavior).
         """
         logger.info("Starting Ollama manager...")
+
+        # Check disk space at startup
+        await self._check_disk_space()
 
         # Check if Ollama is already running
         if await self._check_health():
