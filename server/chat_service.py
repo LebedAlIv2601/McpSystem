@@ -131,8 +131,10 @@ Respond in user's language."""
 
                 # On last iteration, disable tools to force final response
                 is_last_iteration = (iteration == max_iterations)
-                current_tools = None if is_last_iteration else self.ollama_tools
-                current_tool_choice = None if is_last_iteration else tool_choice
+                # current_tools = None if is_last_iteration else self.ollama_tools
+                current_tools = None
+                # current_tool_choice = None if is_last_iteration else tool_choice
+                current_tool_choice = None
 
                 response_text, tool_calls = await self.ollama_client.chat_completion(
                     messages=current_messages,
