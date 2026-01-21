@@ -9,7 +9,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.error import TimedOut, NetworkError
 
 from config import TELEGRAM_BOT_TOKEN, WELCOME_MESSAGE, ERROR_MESSAGE
-from ollama_client import OllamaClient
+from backend_client import BackendClient
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class TelegramBot:
     """Telegram bot for EasyPomodoro project consultation."""
 
     def __init__(self):
-        self.ollama_client = OllamaClient()
+        self.backend_client = BackendClient()
         self.application: Optional[Application] = None
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -55,8 +55,8 @@ class TelegramBot:
             # Show thinking indicator
             thinking_msg = await retry_telegram_call(update.message.reply_text, "Думаю...")
 
-            # Send message to Ollama
-            response_text = await self.ollama_client.send_message(
+            # Send message to backend
+            response_text, mcp_used = await self.backend_client.send_message(
                 user_id=str(user_id),
                 message=user_message
             )
@@ -105,8 +105,8 @@ class TelegramBot:
 
     async def stop(self) -> None:
         """Stop the Telegram bot."""
-        # Close Ollama client
-        await self.ollama_client.close()
+        # Close backend client
+        await self.backend_client.close()
 
         if self.application:
             logger.info("Stopping Telegram bot")

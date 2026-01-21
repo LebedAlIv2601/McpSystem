@@ -1,4 +1,4 @@
-"""Chat service for processing messages with OpenRouter and MCP tools."""
+"""Chat service for processing messages with Ollama and MCP tools."""
 
 import json
 import logging
@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 
 from config import ESSENTIAL_TOOLS, MCP_USED_INDICATOR
 from conversation import ConversationManager
-from openrouter_client import OpenRouterClient
+from ollama_client import OllamaClient
 from mcp_manager import MCPManager
 from prompts import get_pr_review_prompt
 
@@ -20,8 +20,8 @@ class ChatService:
     def __init__(self, mcp_manager: MCPManager):
         self.mcp_manager = mcp_manager
         self.conversation_manager = ConversationManager()
-        self.openrouter_client = OpenRouterClient()
-        self.openrouter_tools = []
+        self.ollama_client = OllamaClient()
+        self.ollama_tools = []
 
     def initialize(self) -> None:
         """Initialize service with MCP tools."""
@@ -36,8 +36,8 @@ class ChatService:
         filtered_tools = [t for t in mcp_tools if t["name"] in ESSENTIAL_TOOLS]
         logger.info(f"Filtered tools: {len(filtered_tools)}/{len(mcp_tools)} (saved ~{(len(mcp_tools) - len(filtered_tools)) * 60} tokens)")
 
-        self.openrouter_tools = self.openrouter_client.convert_mcp_tools_to_openrouter(filtered_tools)
-        logger.info(f"Chat service initialized with {len(self.openrouter_tools)} tools")
+        self.ollama_tools = self.ollama_client.convert_mcp_tools_to_ollama(filtered_tools)
+        logger.info(f"Chat service initialized with {len(self.ollama_tools)} tools")
 
     async def process_message(self, user_id: str, message: str) -> Tuple[str, int, bool]:
         """
@@ -59,8 +59,8 @@ class ChatService:
         # Add user message to history
         self.conversation_manager.add_message(user_id, "user", message)
 
-        # Process with OpenRouter
-        response_text, tool_calls_count, mcp_was_used = await self._process_with_openrouter(user_id)
+        # Process with Ollama
+        response_text, tool_calls_count, mcp_was_used = await self._process_with_ollama(user_id)
 
         if response_text:
             # Clean response for storage (remove indicator)
@@ -69,8 +69,8 @@ class ChatService:
 
         return response_text or "Sorry, something went wrong.", tool_calls_count, mcp_was_used
 
-    async def _process_with_openrouter(self, user_id: str) -> Tuple[Optional[str], int, bool]:
-        """Process message with OpenRouter and MCP tools."""
+    async def _process_with_ollama(self, user_id: str) -> Tuple[Optional[str], int, bool]:
+        """Process message with Ollama and MCP tools."""
         conversation_history = self.conversation_manager.get_history(user_id)
         current_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -104,7 +104,7 @@ Respond in user's language."""
         mcp_was_used = False
         total_tool_calls = 0
 
-        tool_choice = "auto" if self.openrouter_tools else None
+        tool_choice = "auto" if self.ollama_tools else None
 
         try:
             max_iterations = 10
@@ -118,10 +118,10 @@ Respond in user's language."""
 
                 # On last iteration, disable tools to force final response
                 is_last_iteration = (iteration == max_iterations)
-                current_tools = None if is_last_iteration else self.openrouter_tools
+                current_tools = None if is_last_iteration else self.ollama_tools
                 current_tool_choice = None if is_last_iteration else tool_choice
 
-                response_text, tool_calls = await self.openrouter_client.chat_completion(
+                response_text, tool_calls = await self.ollama_client.chat_completion(
                     messages=current_messages,
                     tools=current_tools if current_tools else None,
                     tool_choice=current_tool_choice
@@ -139,7 +139,7 @@ Respond in user's language."""
                             "role": "user",
                             "content": "Based on all the information gathered above, provide a complete answer now."
                         })
-                        response_text, _ = await self.openrouter_client.chat_completion(
+                        response_text, _ = await self.ollama_client.chat_completion(
                             messages=current_messages,
                             tools=None,
                             tool_choice=None
@@ -206,12 +206,12 @@ Respond in user's language."""
             return response_text, total_tool_calls, mcp_was_used
 
         except Exception as e:
-            logger.error(f"User {user_id}: OpenRouter processing error: {e}", exc_info=True)
+            logger.error(f"User {user_id}: Ollama processing error: {e}", exc_info=True)
             return None, 0, False
 
     def get_tools_count(self) -> int:
         """Get number of available tools."""
-        return len(self.openrouter_tools)
+        return len(self.ollama_tools)
 
     async def review_pr(self, pr_number: int) -> Tuple[str, int]:
         """
@@ -249,7 +249,7 @@ Respond in user's language."""
                 logger.info(f"PR Review #{pr_number}: iteration {iteration}/{max_iterations}")
 
                 is_last_iteration = (iteration == max_iterations)
-                current_tools = None if is_last_iteration else self.openrouter_tools
+                current_tools = None if is_last_iteration else self.ollama_tools
                 # Use "required" on first iteration to force tool call, then "auto"
                 if iteration == 1:
                     current_tool_choice = "required"
@@ -258,7 +258,7 @@ Respond in user's language."""
                 else:
                     current_tool_choice = "auto"
 
-                response_text, tool_calls = await self.openrouter_client.chat_completion(
+                response_text, tool_calls = await self.ollama_client.chat_completion(
                     messages=messages,
                     tools=current_tools,
                     tool_choice=current_tool_choice
@@ -273,7 +273,7 @@ Respond in user's language."""
                             "role": "user",
                             "content": "Based on all the information gathered, provide the complete code review now."
                         })
-                        response_text, _ = await self.openrouter_client.chat_completion(
+                        response_text, _ = await self.ollama_client.chat_completion(
                             messages=messages,
                             tools=None,
                             tool_choice=None

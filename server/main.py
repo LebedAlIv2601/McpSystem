@@ -10,6 +10,7 @@ from fastapi import FastAPI
 import uvicorn
 
 from logger import setup_logging
+from ollama_manager import OllamaManager
 from mcp_manager import MCPManager
 from chat_service import ChatService
 from app import router, set_chat_service
@@ -17,6 +18,7 @@ from app import router, set_chat_service
 logger = logging.getLogger(__name__)
 
 # Global state
+ollama_manager: OllamaManager = None
 mcp_manager: MCPManager = None
 mcp_context = None
 chat_service: ChatService = None
@@ -26,13 +28,19 @@ chat_service: ChatService = None
 async def lifespan(app: FastAPI):
     """
     Application lifespan manager.
-    Handles startup and shutdown of MCP connections.
+    Handles startup and shutdown of Ollama and MCP connections.
     """
-    global mcp_manager, mcp_context, chat_service
+    global ollama_manager, mcp_manager, mcp_context, chat_service
 
     logger.info("=== MCP Backend Server Starting ===")
 
     try:
+        # Initialize and start Ollama Manager
+        logger.info("Starting Ollama...")
+        ollama_manager = OllamaManager()
+        await ollama_manager.start()
+        logger.info("Ollama started successfully")
+
         # Initialize MCP Manager
         mcp_manager = MCPManager()
 
@@ -65,6 +73,13 @@ async def lifespan(app: FastAPI):
                 await mcp_context.__aexit__(None, None, None)
             except Exception as e:
                 logger.warning(f"Error closing MCP context: {e}")
+
+        if ollama_manager:
+            try:
+                ollama_manager.stop()
+                logger.info("Ollama stopped")
+            except Exception as e:
+                logger.warning(f"Error stopping Ollama: {e}")
 
         logger.info("=== MCP Backend Server Stopped ===")
 

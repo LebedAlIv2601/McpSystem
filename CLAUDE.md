@@ -23,14 +23,14 @@ This system provides:
 │                    Telegram Bot Client                       │
 │                      (client/)                               │
 │  - Handles /start command                                    │
-│  - Forwards messages to backend                              │
+│  - Forwards messages to backend via HTTP                     │
 │  - Shows "Думаю..." indicator                                │
 └─────────────────────────┬───────────────────────────────────┘
-                          │
+                          │ HTTP API
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                    Backend Server (server/)                  │
-│                      FastAPI + MCP                           │
+│             Backend Server (server/ - Docker)                │
+│                FastAPI + Ollama + MCP                        │
 │                                                              │
 │  Endpoints:                                                  │
 │  ├─ POST /api/chat      - General chat with AI              │
@@ -38,10 +38,14 @@ This system provides:
 │  └─ GET  /health        - Health check                       │
 │                                                              │
 │  Components:                                                 │
+│  ├─ ollama_manager.py   - Ollama subprocess lifecycle       │
+│  ├─ ollama_client.py    - Ollama API integration            │
 │  ├─ chat_service.py     - Message processing + tool loops   │
 │  ├─ mcp_manager.py      - MCP server connections            │
-│  ├─ openrouter_client.py - LLM API integration              │
 │  └─ prompts.py          - System prompts (PR review, etc)   │
+│                                                              │
+│  Local LLM:                                                  │
+│  └─ Ollama (llama3.1:8b) - Runs inside Docker container     │
 └─────────────────────────┬───────────────────────────────────┘
                           │
           ┌───────────────┴───────────────┐
@@ -239,84 +243,70 @@ jobs:
 
 ### Prerequisites
 - Python 3.14+
-- OpenRouter API key (for server)
 - GitHub Personal Access Token (for server)
 - Telegram bot token (for client)
-- Ollama (for client) - https://ollama.com
+- Docker (for server deployment)
 
-### Server Setup
+### Server Setup (Docker Deployment)
+
+The server runs Ollama llama3.1:8b model inside Docker and is designed for Railway deployment.
 
 1. **Clone repository:**
 ```bash
 git clone <repo-url>
-cd McpSystem
+cd McpSystem/server
 ```
 
-2. **Create virtual environment:**
+2. **Configure environment:**
 ```bash
-python3.14 -m venv venv
-source venv/bin/activate
-```
-
-3. **Install dependencies:**
-```bash
-pip install -r requirements.txt
-```
-
-4. **Configure environment:**
-```bash
-cd server
 cp .env.example .env
 # Edit .env:
 # BACKEND_API_KEY=your_secure_api_key
-# OPENROUTER_API_KEY=your_openrouter_key
 # GITHUB_TOKEN=your_github_pat
+# OLLAMA_MODEL=llama3.1:8b (default)
 ```
 
-5. **Run server:**
+3. **Build and run with Docker:**
 ```bash
-python main.py
+docker build -t mcp-backend .
+docker run -p 8000:8000 \
+  -v ollama-models:/root/.ollama \
+  --env-file .env \
+  mcp-backend
 ```
+
+**First startup:** Model download takes ~5-10 minutes (4.5 GB). Subsequent starts are fast (~30s) thanks to the volume mount.
+
+**Railway Deployment:**
+- Connect repository to Railway
+- Set root directory to `server/`
+- Railway auto-detects Dockerfile
+- Add persistent volume: mount path `/root/.ollama`, size 10 GB
+- Set environment variables in Railway dashboard
 
 ### Client Setup
 
-**Note:** Client now uses local Ollama instead of backend server.
+The Telegram bot client connects to the backend server via HTTP API.
 
-1. **Install Ollama:**
-```bash
-# Download and install from https://ollama.com
-# Or on macOS:
-brew install ollama
-```
-
-2. **Pull required model:**
-```bash
-ollama pull llama3.1:8b
-```
-
-3. **Install dependencies:**
+1. **Install dependencies:**
 ```bash
 cd client
 pip install -r requirements.txt
 ```
 
-4. **Configure environment:**
+2. **Configure environment:**
 ```bash
 cp .env.example .env
 # Edit .env:
 # TELEGRAM_BOT_TOKEN=your_bot_token
+# BACKEND_URL=https://your-server.railway.app
+# BACKEND_API_KEY=your_secure_api_key
 ```
 
-5. **Run client:**
+3. **Run client:**
 ```bash
-# From client/ directory
-../venv/bin/python main.py
+python main.py
 ```
-
-The bot will automatically:
-- Start Ollama subprocess if not running
-- Verify llama3.1:8b model is available
-- Shutdown Ollama on exit
 
 ### GitHub PAT Scopes
 
@@ -332,38 +322,64 @@ Create a Classic PAT with these scopes:
 | Variable | Description |
 |----------|-------------|
 | `BACKEND_API_KEY` | API key for authentication |
-| `OPENROUTER_API_KEY` | OpenRouter API key |
 | `GITHUB_TOKEN` | GitHub Personal Access Token |
-| `OPENROUTER_MODEL` | LLM model (default: `deepseek/deepseek-v3.2`) |
+| `OLLAMA_URL` | Ollama API URL (default: `http://localhost:11434`) |
+| `OLLAMA_MODEL` | Ollama model name (default: `llama3.1:8b`) |
 | `PORT` | Server port (default: `8000`) |
 | `HOST` | Server host (default: `0.0.0.0`) |
+| `OPENROUTER_API_KEY` | OpenRouter API key (optional, for RAG embeddings) |
 
 ### Client Environment Variables
 
 | Variable | Description |
 |----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token |
+| `BACKEND_URL` | Backend server URL (e.g., `https://your-server.railway.app`) |
+| `BACKEND_API_KEY` | API key for backend authentication |
 
 ## Technology Stack
 
 - **Python 3.14** - Main language
 - **FastAPI** - Backend API framework
 - **python-telegram-bot** - Telegram integration
-- **Ollama** - Local LLM inference (llama3.1:8b)
+- **Ollama** - Local LLM inference (llama3.1:8b) running on server
+- **Docker** - Server containerization
 - **MCP SDK** - Model Context Protocol (HTTP + stdio transports)
 - **httpx** - Async HTTP client
-- **OpenRouter** - LLM API access (server only)
 - **Pydantic** - Data validation
+- **OpenRouter** - Embeddings API (optional, for RAG)
 
 ## Deployment
 
-### Railway
+### Railway (Recommended)
 
-The server is designed for Railway deployment:
+The server uses Docker and is optimized for Railway Hobby plan (8 GB RAM, $5/month).
 
-1. Connect repository to Railway
-2. Set environment variables in Railway dashboard
-3. Deploy automatically on push
+**Setup:**
+
+1. **Create new Railway project**
+   - Connect GitHub repository
+   - Set root directory: `server/`
+   - Railway auto-detects Dockerfile
+
+2. **Add Persistent Volume**
+   - Dashboard → Service → Volumes → New Volume
+   - Mount path: `/root/.ollama`
+   - Size: 10 GB
+   - Purpose: Cache Ollama models between deploys
+
+3. **Set Environment Variables**
+   ```
+   BACKEND_API_KEY=your_secure_key
+   GITHUB_TOKEN=your_github_pat
+   OLLAMA_MODEL=llama3.1:8b
+   ```
+
+4. **Deploy**
+   - First deploy: ~10-15 minutes (Docker build + model download)
+   - Subsequent deploys: ~5 minutes (model cached in volume)
+
+**Cost estimate:** ~$2.5-4/month for 5-10 requests/day on Hobby plan.
 
 ### Manual Testing
 
