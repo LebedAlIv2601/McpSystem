@@ -2,17 +2,20 @@
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
 
 from auth import verify_api_key
 from schemas import ChatRequest, ChatResponse, HealthResponse, ErrorResponse, ReviewPRRequest, ReviewPRResponse
 from chat_service import ChatService
+from ollama_manager import OllamaManager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Global chat service instance (initialized in main.py)
+# Global instances (initialized in main.py)
 _chat_service: ChatService = None
+_ollama_manager: Optional[OllamaManager] = None
 
 
 def get_chat_service() -> ChatService:
@@ -29,6 +32,12 @@ def set_chat_service(service: ChatService) -> None:
     """Set chat service instance."""
     global _chat_service
     _chat_service = service
+
+
+def set_ollama_manager(manager: OllamaManager) -> None:
+    """Set Ollama manager instance."""
+    global _ollama_manager
+    _ollama_manager = manager
 
 
 @router.post(
@@ -59,6 +68,13 @@ async def chat(
         ChatResponse with assistant's response
     """
     logger.info(f"Chat request from user {request.user_id}")
+
+    # Check if model is ready
+    if _ollama_manager and not _ollama_manager.is_model_ready():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LLM model is still downloading. Please try again in a few minutes. Check /health for status."
+        )
 
     try:
         response_text, tool_calls_count, mcp_used = await chat_service.process_message(
@@ -109,6 +125,13 @@ async def review_pr(
     """
     logger.info(f"PR review request for #{request.pr_number}")
 
+    # Check if model is ready
+    if _ollama_manager and not _ollama_manager.is_model_ready():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LLM model is still downloading. Please try again in a few minutes. Check /health for status."
+        )
+
     try:
         review_text, tool_calls_count = await chat_service.review_pr(
             pr_number=request.pr_number
@@ -131,24 +154,28 @@ async def review_pr(
     "/health",
     response_model=HealthResponse,
     summary="Health check",
-    description="Check if the server is healthy and MCP is connected."
+    description="Check if the server is healthy, MCP is connected, and LLM model is ready."
 )
 async def health_check() -> HealthResponse:
     """
     Health check endpoint.
 
     Returns:
-        HealthResponse with service status
+        HealthResponse with service status, MCP connection, tools count, and model readiness
     """
+    model_ready = _ollama_manager.is_model_ready() if _ollama_manager else False
+
     if _chat_service is None:
         return HealthResponse(
-            status="unhealthy",
+            status="starting" if not model_ready else "unhealthy",
             mcp_connected=False,
-            tools_count=0
+            tools_count=0,
+            model_ready=model_ready
         )
 
     return HealthResponse(
-        status="healthy",
+        status="healthy" if model_ready else "starting",
         mcp_connected=True,
-        tools_count=_chat_service.get_tools_count()
+        tools_count=_chat_service.get_tools_count(),
+        model_ready=model_ready
     )

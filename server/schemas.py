@@ -25,6 +25,7 @@ class HealthResponse(BaseModel):
     status: str = Field(default="healthy")
     mcp_connected: bool = Field(default=False)
     tools_count: int = Field(default=0)
+    model_ready: bool = Field(default=False, description="Whether LLM model is ready for inference")
 
 
 class ErrorResponse(BaseModel):

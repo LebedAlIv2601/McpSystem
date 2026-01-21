@@ -13,7 +13,7 @@ from logger import setup_logging
 from ollama_manager import OllamaManager
 from mcp_manager import MCPManager
 from chat_service import ChatService
-from app import router, set_chat_service
+from app import router, set_chat_service, set_ollama_manager
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,11 @@ async def lifespan(app: FastAPI):
         # Initialize and start Ollama Manager
         logger.info("Starting Ollama...")
         ollama_manager = OllamaManager()
-        await ollama_manager.start()
+        await ollama_manager.start(background_pull=True)  # Non-blocking model pull for Railway
         logger.info("Ollama started successfully")
+
+        # Set global ollama manager for health checks
+        set_ollama_manager(ollama_manager)
 
         # Initialize MCP Manager
         mcp_manager = MCPManager()

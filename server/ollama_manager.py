@@ -20,6 +20,8 @@ class OllamaManager:
         self.process: Optional[subprocess.Popen] = None
         self.ollama_url = OLLAMA_URL
         self.model_name = OLLAMA_MODEL
+        self.model_ready = False
+        self._pull_task: Optional[asyncio.Task] = None
 
     async def _check_health(self) -> bool:
         """Check if Ollama is accessible."""
@@ -46,10 +48,11 @@ class OllamaManager:
 
     async def _pull_model(self) -> bool:
         """Pull model from Ollama registry."""
-        logger.info(f"Pulling model {self.model_name} (this may take several minutes on first run)...")
+        logger.info(f"Pulling model {self.model_name} (this may take 5-10 minutes on first run)...")
+        logger.info("Note: App will start serving requests while model downloads in background")
 
         try:
-            async with httpx.AsyncClient(timeout=600.0) as client:
+            async with httpx.AsyncClient(timeout=900.0) as client:
                 # Start the pull request
                 async with client.stream(
                     'POST',
@@ -58,6 +61,9 @@ class OllamaManager:
                 ) as response:
                     response.raise_for_status()
 
+                    last_status = ""
+                    completed_layers = set()
+
                     # Stream progress updates
                     async for line in response.aiter_lines():
                         if line:
@@ -65,23 +71,58 @@ class OllamaManager:
                                 import json
                                 data = json.loads(line)
                                 status = data.get("status", "")
+                                digest = data.get("digest", "")
 
-                                # Log significant progress
-                                if "pulling" in status.lower() or "downloading" in status.lower():
-                                    logger.info(f"Model pull: {status}")
-                                elif status == "success":
-                                    logger.info(f"Model {self.model_name} pulled successfully")
-                                    return True
+                                # Only log new statuses to avoid spam
+                                if status != last_status:
+                                    if "pulling" in status.lower():
+                                        logger.info(f"Model pull: {status}")
+                                    elif "downloading" in status.lower():
+                                        completed = data.get("completed", 0)
+                                        total = data.get("total", 0)
+                                        if total > 0:
+                                            percent = (completed / total) * 100
+                                            logger.info(f"Downloading: {percent:.1f}% ({completed}/{total} bytes)")
+                                    elif status == "verifying sha256 digest":
+                                        logger.info("Verifying downloaded model...")
+                                    elif status == "writing manifest":
+                                        logger.info("Writing model manifest...")
+                                    elif status == "success":
+                                        logger.info(f"Model {self.model_name} pulled successfully!")
+                                        return True
+
+                                    last_status = status
+
+                                # Track completed layers
+                                if digest and status == "success":
+                                    if digest not in completed_layers:
+                                        completed_layers.add(digest)
+                                        logger.info(f"Layer completed: {digest[:12]}... ({len(completed_layers)} layers done)")
+
                             except json.JSONDecodeError:
                                 continue
 
+                    logger.info(f"Model pull completed")
                     return True
 
         except Exception as e:
             logger.error(f"Failed to pull model: {e}")
             return False
 
-    async def _verify_model(self, auto_pull: bool = True) -> bool:
+    async def _background_pull(self) -> None:
+        """Pull model in background."""
+        try:
+            logger.info(f"Starting background pull of model {self.model_name}")
+            success = await self._pull_model()
+            if success:
+                self.model_ready = True
+                logger.info(f"Background model pull completed - model is ready")
+            else:
+                logger.error(f"Background model pull failed")
+        except Exception as e:
+            logger.error(f"Background pull error: {e}")
+
+    async def _verify_model(self, auto_pull: bool = True, background: bool = False) -> bool:
         """Verify that required model is available, optionally pull it if missing."""
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -95,6 +136,7 @@ class OllamaManager:
                     model_name = model.get("name", "")
                     if model_name == self.model_name or model_name.startswith(f"{self.model_name}:"):
                         logger.info(f"Model {self.model_name} is available")
+                        self.model_ready = True
                         return True
 
                 # Model not found
@@ -103,12 +145,20 @@ class OllamaManager:
 
                 # Auto-pull if enabled
                 if auto_pull:
-                    logger.info(f"Attempting to pull model {self.model_name}...")
-                    if await self._pull_model():
-                        return True
+                    if background:
+                        # Start background pull task
+                        logger.info(f"Starting background pull of model {self.model_name}")
+                        self._pull_task = asyncio.create_task(self._background_pull())
+                        return True  # Don't block startup
                     else:
-                        logger.error(f"Failed to pull model {self.model_name}")
-                        return False
+                        # Blocking pull
+                        logger.info(f"Attempting to pull model {self.model_name}...")
+                        if await self._pull_model():
+                            self.model_ready = True
+                            return True
+                        else:
+                            logger.error(f"Failed to pull model {self.model_name}")
+                            return False
                 else:
                     logger.error(f"Please run: ollama pull {self.model_name}")
                     return False
@@ -117,16 +167,28 @@ class OllamaManager:
             logger.error(f"Failed to verify model: {e}")
             return False
 
-    async def start(self) -> None:
-        """Start Ollama subprocess if not already running."""
+    def is_model_ready(self) -> bool:
+        """Check if model is ready for use."""
+        return self.model_ready
+
+    async def start(self, background_pull: bool = True) -> None:
+        """
+        Start Ollama subprocess if not already running.
+
+        Args:
+            background_pull: If True, pull missing models in background without blocking startup.
+                            If False, block until model is available (legacy behavior).
+        """
         logger.info("Starting Ollama manager...")
 
         # Check if Ollama is already running
         if await self._check_health():
             logger.info("Ollama is already running")
 
-            # Verify model
-            if not await self._verify_model():
+            # Verify model (non-blocking if background_pull=True)
+            await self._verify_model(background=background_pull)
+
+            if not self.model_ready and not background_pull:
                 raise RuntimeError(f"Model {self.model_name} not available. Run: ollama pull {self.model_name}")
 
             return
@@ -152,15 +214,26 @@ class OllamaManager:
             self.stop()
             raise RuntimeError("Ollama failed to start within timeout period")
 
-        # Verify model
-        if not await self._verify_model():
+        # Verify model (non-blocking if background_pull=True)
+        await self._verify_model(background=background_pull)
+
+        if not self.model_ready and not background_pull:
             self.stop()
             raise RuntimeError(f"Model {self.model_name} not available. Run: ollama pull {self.model_name}")
 
-        logger.info("Ollama manager started successfully")
+        if self.model_ready:
+            logger.info("Ollama manager started successfully with model ready")
+        else:
+            logger.info("Ollama manager started successfully (model downloading in background)")
 
     def stop(self) -> None:
         """Stop Ollama subprocess if it was started by this manager."""
+        # Cancel background pull task if running
+        if self._pull_task and not self._pull_task.done():
+            logger.info("Cancelling background model pull task...")
+            self._pull_task.cancel()
+            self._pull_task = None
+
         if self.process:
             logger.info(f"Stopping Ollama subprocess (PID {self.process.pid})...")
             try:
