@@ -14,9 +14,14 @@ logger = logging.getLogger(__name__)
 class OllamaClient:
     """Client for Ollama API with tool support."""
 
-    def __init__(self):
+    def __init__(self, model_name: Optional[str] = None):
         self.ollama_url = OLLAMA_URL
-        self.model = OLLAMA_MODEL
+        self.model = model_name or OLLAMA_MODEL
+
+    def set_model(self, model_name: str) -> None:
+        """Update model name (useful when model name changes after pull)."""
+        self.model = model_name
+        logger.info(f"Updated Ollama model name to: {model_name}")
 
     def convert_mcp_tools_to_ollama(self, mcp_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """

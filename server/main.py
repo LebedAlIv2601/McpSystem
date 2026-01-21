@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
         await mcp_context.__aenter__()
 
         # Initialize Chat Service
-        chat_service = ChatService(mcp_manager)
+        chat_service = ChatService(mcp_manager, ollama_manager)
         chat_service.initialize()
 
         # Set global chat service for router

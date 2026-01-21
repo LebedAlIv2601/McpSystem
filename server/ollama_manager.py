@@ -32,6 +32,50 @@ class OllamaManager:
         except Exception:
             return False
 
+    async def _list_models(self) -> list:
+        """List all available models in Ollama."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{self.ollama_url}/api/tags")
+                response.raise_for_status()
+                data = response.json()
+                models = data.get("models", [])
+                model_names = [m.get("name", "") for m in models]
+                logger.info(f"Available models in Ollama: {model_names}")
+                return model_names
+        except Exception as e:
+            logger.error(f"Failed to list models: {e}")
+            return []
+
+    async def _check_model_exists(self) -> bool:
+        """Check if the required model exists in Ollama."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{self.ollama_url}/api/tags")
+                response.raise_for_status()
+                data = response.json()
+                models = data.get("models", [])
+
+                # Check for exact match or prefix match
+                for model in models:
+                    model_name = model.get("name", "")
+                    # Try multiple variations
+                    if (model_name == self.model_name or
+                        model_name.startswith(f"{self.model_name}:") or
+                        model_name == f"{self.model_name}:latest"):
+                        logger.info(f"Found model: {model_name}")
+                        # Update model_name if needed
+                        if model_name != self.model_name:
+                            logger.info(f"Updating model name from {self.model_name} to {model_name}")
+                            self.model_name = model_name
+                        return True
+
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to check model existence: {e}")
+            return False
+
     async def _wait_for_startup(self, max_attempts: int = 30, delay: float = 1.0) -> bool:
         """Wait for Ollama to become available."""
         logger.info(f"Waiting for Ollama to start (max {max_attempts}s)...")
@@ -115,8 +159,17 @@ class OllamaManager:
             logger.info(f"Starting background pull of model {self.model_name}")
             success = await self._pull_model()
             if success:
-                self.model_ready = True
-                logger.info(f"Background model pull completed - model is ready")
+                # Wait a bit for Ollama to register the model
+                await asyncio.sleep(2)
+
+                # Verify model is actually available
+                if await self._check_model_exists():
+                    self.model_ready = True
+                    logger.info(f"Background model pull completed - model is ready")
+                else:
+                    logger.error(f"Model pull succeeded but model still not found in Ollama")
+                    # Try to list available models for debugging
+                    await self._list_models()
             else:
                 logger.error(f"Background model pull failed")
         except Exception as e:
@@ -125,43 +178,42 @@ class OllamaManager:
     async def _verify_model(self, auto_pull: bool = True, background: bool = False) -> bool:
         """Verify that required model is available, optionally pull it if missing."""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(f"{self.ollama_url}/api/tags")
-                response.raise_for_status()
+            # Check if model exists
+            if await self._check_model_exists():
+                logger.info(f"Model {self.model_name} is available")
+                self.model_ready = True
+                return True
 
-                data = response.json()
-                models = data.get("models", [])
+            # Model not found - list available models
+            logger.warning(f"Model {self.model_name} not found in Ollama")
+            await self._list_models()
 
-                for model in models:
-                    model_name = model.get("name", "")
-                    if model_name == self.model_name or model_name.startswith(f"{self.model_name}:"):
-                        logger.info(f"Model {self.model_name} is available")
-                        self.model_ready = True
-                        return True
-
-                # Model not found
-                logger.warning(f"Model {self.model_name} not found in Ollama")
-                logger.info(f"Available models: {[m.get('name') for m in models]}")
-
-                # Auto-pull if enabled
-                if auto_pull:
-                    if background:
-                        # Start background pull task
-                        logger.info(f"Starting background pull of model {self.model_name}")
-                        self._pull_task = asyncio.create_task(self._background_pull())
-                        return True  # Don't block startup
-                    else:
-                        # Blocking pull
-                        logger.info(f"Attempting to pull model {self.model_name}...")
-                        if await self._pull_model():
+            # Auto-pull if enabled
+            if auto_pull:
+                if background:
+                    # Start background pull task
+                    logger.info(f"Starting background pull of model {self.model_name}")
+                    self._pull_task = asyncio.create_task(self._background_pull())
+                    return True  # Don't block startup
+                else:
+                    # Blocking pull
+                    logger.info(f"Attempting to pull model {self.model_name}...")
+                    if await self._pull_model():
+                        # Verify again after pull
+                        await asyncio.sleep(2)
+                        if await self._check_model_exists():
                             self.model_ready = True
                             return True
                         else:
-                            logger.error(f"Failed to pull model {self.model_name}")
+                            logger.error(f"Model pull succeeded but model not found")
+                            await self._list_models()
                             return False
-                else:
-                    logger.error(f"Please run: ollama pull {self.model_name}")
-                    return False
+                    else:
+                        logger.error(f"Failed to pull model {self.model_name}")
+                        return False
+            else:
+                logger.error(f"Please run: ollama pull {self.model_name}")
+                return False
 
         except Exception as e:
             logger.error(f"Failed to verify model: {e}")
@@ -170,6 +222,10 @@ class OllamaManager:
     def is_model_ready(self) -> bool:
         """Check if model is ready for use."""
         return self.model_ready
+
+    def get_model_name(self) -> str:
+        """Get the actual model name (may differ from initial after pull)."""
+        return self.model_name
 
     async def start(self, background_pull: bool = True) -> None:
         """

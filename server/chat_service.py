@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """Service for handling chat requests with MCP tool integration."""
 
-    def __init__(self, mcp_manager: MCPManager):
+    def __init__(self, mcp_manager: MCPManager, ollama_manager=None):
         self.mcp_manager = mcp_manager
+        self.ollama_manager = ollama_manager
         self.conversation_manager = ConversationManager()
         self.ollama_client = OllamaClient()
         self.ollama_tools = []
@@ -38,6 +39,12 @@ class ChatService:
 
         self.ollama_tools = self.ollama_client.convert_mcp_tools_to_ollama(filtered_tools)
         logger.info(f"Chat service initialized with {len(self.ollama_tools)} tools")
+
+        # Update model name if OllamaManager is available
+        if self.ollama_manager:
+            model_name = self.ollama_manager.get_model_name()
+            self.ollama_client.set_model(model_name)
+            logger.info(f"Using Ollama model: {model_name}")
 
     async def process_message(self, user_id: str, message: str) -> Tuple[str, int, bool]:
         """
@@ -71,6 +78,12 @@ class ChatService:
 
     async def _process_with_ollama(self, user_id: str) -> Tuple[Optional[str], int, bool]:
         """Process message with Ollama and MCP tools."""
+        # Update model name from OllamaManager (in case it changed after background pull)
+        if self.ollama_manager:
+            model_name = self.ollama_manager.get_model_name()
+            if self.ollama_client.model != model_name:
+                self.ollama_client.set_model(model_name)
+
         conversation_history = self.conversation_manager.get_history(user_id)
         current_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -224,6 +237,13 @@ Respond in user's language."""
             Tuple of (review_text, tool_calls_count)
         """
         logger.info(f"Starting PR review for #{pr_number}")
+
+        # Update model name from OllamaManager (in case it changed after background pull)
+        if self.ollama_manager:
+            model_name = self.ollama_manager.get_model_name()
+            if self.ollama_client.model != model_name:
+                self.ollama_client.set_model(model_name)
+
         current_date = datetime.now().strftime("%Y-%m-%d")
 
         system_prompt = {
