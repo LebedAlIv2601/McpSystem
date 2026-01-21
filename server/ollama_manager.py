@@ -44,8 +44,45 @@ class OllamaManager:
 
         return False
 
-    async def _verify_model(self) -> bool:
-        """Verify that required model is available."""
+    async def _pull_model(self) -> bool:
+        """Pull model from Ollama registry."""
+        logger.info(f"Pulling model {self.model_name} (this may take several minutes on first run)...")
+
+        try:
+            async with httpx.AsyncClient(timeout=600.0) as client:
+                # Start the pull request
+                async with client.stream(
+                    'POST',
+                    f"{self.ollama_url}/api/pull",
+                    json={"name": self.model_name}
+                ) as response:
+                    response.raise_for_status()
+
+                    # Stream progress updates
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                import json
+                                data = json.loads(line)
+                                status = data.get("status", "")
+
+                                # Log significant progress
+                                if "pulling" in status.lower() or "downloading" in status.lower():
+                                    logger.info(f"Model pull: {status}")
+                                elif status == "success":
+                                    logger.info(f"Model {self.model_name} pulled successfully")
+                                    return True
+                            except json.JSONDecodeError:
+                                continue
+
+                    return True
+
+        except Exception as e:
+            logger.error(f"Failed to pull model: {e}")
+            return False
+
+    async def _verify_model(self, auto_pull: bool = True) -> bool:
+        """Verify that required model is available, optionally pull it if missing."""
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(f"{self.ollama_url}/api/tags")
@@ -60,10 +97,21 @@ class OllamaManager:
                         logger.info(f"Model {self.model_name} is available")
                         return True
 
-                logger.error(f"Model {self.model_name} not found in Ollama")
-                logger.error(f"Available models: {[m.get('name') for m in models]}")
-                logger.error(f"Please run: ollama pull {self.model_name}")
-                return False
+                # Model not found
+                logger.warning(f"Model {self.model_name} not found in Ollama")
+                logger.info(f"Available models: {[m.get('name') for m in models]}")
+
+                # Auto-pull if enabled
+                if auto_pull:
+                    logger.info(f"Attempting to pull model {self.model_name}...")
+                    if await self._pull_model():
+                        return True
+                    else:
+                        logger.error(f"Failed to pull model {self.model_name}")
+                        return False
+                else:
+                    logger.error(f"Please run: ollama pull {self.model_name}")
+                    return False
 
         except Exception as e:
             logger.error(f"Failed to verify model: {e}")
