@@ -1,10 +1,11 @@
 # Dockerfile for EasyPomodoro MCP Backend with Ollama
 FROM python:3.14-slim
 
-# Install system dependencies
+# Install system dependencies (including zstd for Ollama)
 RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
+    zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Ollama
