@@ -72,8 +72,8 @@ class OllamaClient:
             "stream": False
         }
 
-        if tools:
-            payload["tools"] = tools
+        # if tools:
+        #     payload["tools"] = tools
 
         logger.info(f"Ollama request: model={self.model}, messages={len(messages)}, tools={len(tools) if tools else 0}")
         logger.debug(f"Ollama payload: {json.dumps(payload, indent=2)}")
@@ -82,7 +82,7 @@ class OllamaClient:
         logger.info(f"Message roles: {message_roles}")
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=900.0) as client:  # 15 minutes for slow models
                 response = await client.post(url, json=payload)
                 response.raise_for_status()
                 data = response.json()
