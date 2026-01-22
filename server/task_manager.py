@@ -4,15 +4,14 @@ Task Manager для асинхронной обработки запросов �
 """
 
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
 
-from logger import get_logger
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class TaskStatus(str, Enum):
