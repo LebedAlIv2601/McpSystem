@@ -92,18 +92,20 @@ class TaskManager:
             try:
                 await asyncio.sleep(self.cleanup_interval_seconds)
 
-                cutoff_time = datetime.now() - timedelta(minutes=self.task_ttl_minutes)
+                completed_cutoff = datetime.now() - timedelta(minutes=self.task_ttl_minutes)
+                pending_cutoff = datetime.now() - timedelta(minutes=15)  # 15 минут для pending
                 tasks_to_remove = []
 
                 for task_id, task in self.tasks.items():
-                    # Удаляем завершенные/ошибочные задачи старше TTL
+                    # Удаляем завершенные/ошибочные задачи старше 5 минут
                     if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
-                        if task.completed_at and task.completed_at < cutoff_time:
+                        if task.completed_at and task.completed_at < completed_cutoff:
                             tasks_to_remove.append(task_id)
-                    # Удаляем зависшие задачи
-                    elif task.updated_at < cutoff_time:
-                        logger.warning(f"Задача {task_id} зависла, удаляем")
+                    # Удаляем задачи в pending более 15 минут (точно зависли)
+                    elif task.status == TaskStatus.PENDING and task.created_at < pending_cutoff:
+                        logger.warning(f"Задача {task_id} зависла в pending, удаляем")
                         tasks_to_remove.append(task_id)
+                    # Processing задачи НЕ удаляем - они могут работать долго (6-7 минут)
 
                 for task_id in tasks_to_remove:
                     del self.tasks[task_id]
