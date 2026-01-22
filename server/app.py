@@ -1,13 +1,19 @@
 """FastAPI router with chat endpoint."""
 
+import asyncio
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional
 
 from auth import verify_api_key
-from schemas import ChatRequest, ChatResponse, HealthResponse, ErrorResponse, ReviewPRRequest, ReviewPRResponse
+from schemas import (
+    ChatRequest, ChatResponse, HealthResponse, ErrorResponse,
+    ReviewPRRequest, ReviewPRResponse, AsyncChatRequest,
+    AsyncChatResponse, TaskStatusResponse
+)
 from chat_service import ChatService
 from ollama_manager import OllamaManager
+from task_manager import task_manager, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +100,106 @@ async def chat(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+@router.post(
+    "/api/chat/async",
+    response_model=AsyncChatResponse,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid API key"},
+        503: {"model": ErrorResponse, "description": "Service unavailable"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    },
+    summary="Send chat message (async)",
+    description="Submit a chat message for asynchronous processing. Returns task_id immediately. Use GET /api/tasks/{task_id} to poll for results."
+)
+async def chat_async(
+    request: AsyncChatRequest,
+    api_key: str = Depends(verify_api_key),
+    chat_service: ChatService = Depends(get_chat_service)
+) -> AsyncChatResponse:
+    """
+    Submit chat message for async processing and return task ID immediately.
+
+    Args:
+        request: Chat request with user_id and message
+        api_key: Validated API key
+        chat_service: Chat service instance
+
+    Returns:
+        AsyncChatResponse with task_id
+    """
+    logger.info(f"Async chat request from user {request.user_id}")
+
+    # Check if model is ready
+    if _ollama_manager and not _ollama_manager.is_model_ready():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LLM model is still downloading. Please try again in a few minutes. Check /health for status."
+        )
+
+    try:
+        # Create task
+        task_id = task_manager.create_task(request.user_id, request.message)
+
+        # Start processing in background
+        asyncio.create_task(chat_service.process_message_async(task_id, request.user_id, request.message))
+
+        return AsyncChatResponse(
+            task_id=task_id,
+            status=TaskStatus.PENDING.value
+        )
+
+    except Exception as e:
+        logger.error(f"Async chat submission error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get(
+    "/api/tasks/{task_id}",
+    response_model=TaskStatusResponse,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid API key"},
+        404: {"model": ErrorResponse, "description": "Task not found"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    },
+    summary="Get task status",
+    description="Poll for task status and results. Task is automatically deleted 5 minutes after completion."
+)
+async def get_task_status(
+    task_id: str,
+    api_key: str = Depends(verify_api_key)
+) -> TaskStatusResponse:
+    """
+    Get task status and result (if completed).
+
+    Args:
+        task_id: Task ID from /api/chat/async
+        api_key: Validated API key
+
+    Returns:
+        TaskStatusResponse with status and result
+    """
+    task = task_manager.get_task(task_id)
+
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found (may have expired)"
+        )
+
+    return TaskStatusResponse(
+        task_id=task.task_id,
+        status=task.status.value,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+        completed_at=task.completed_at,
+        result=task.result,
+        error=task.error
+    )
 
 
 @router.post(

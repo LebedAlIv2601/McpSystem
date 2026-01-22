@@ -1,5 +1,6 @@
 """Chat service for processing messages with Ollama and MCP tools."""
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -10,6 +11,7 @@ from conversation import ConversationManager
 from ollama_client import OllamaClient
 from mcp_manager import MCPManager
 from prompts import get_pr_review_prompt
+from task_manager import task_manager, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -353,3 +355,35 @@ Respond in user's language."""
         except Exception as e:
             logger.error(f"PR Review #{pr_number}: Error: {e}", exc_info=True)
             return f"Error during review: {str(e)}", total_tool_calls
+
+    async def process_message_async(self, task_id: str, user_id: str, message: str) -> None:
+        """
+        Process user message asynchronously and update task status.
+
+        Args:
+            task_id: Task ID to update
+            user_id: Unique user identifier
+            message: User message text
+        """
+        logger.info(f"Task {task_id}: Starting async processing for user {user_id}")
+
+        try:
+            task_manager.update_status(task_id, TaskStatus.PROCESSING)
+
+            response_text, tool_calls_count, mcp_was_used = await self.process_message(user_id, message)
+
+            result = {
+                "response": response_text,
+                "tool_calls_count": tool_calls_count,
+                "mcp_used": mcp_was_used
+            }
+
+            task_manager.set_result(task_id, result)
+            task_manager.update_status(task_id, TaskStatus.COMPLETED)
+
+            logger.info(f"Task {task_id}: Completed successfully")
+
+        except Exception as e:
+            logger.error(f"Task {task_id}: Failed with error: {e}", exc_info=True)
+            task_manager.set_error(task_id, str(e))
+            task_manager.update_status(task_id, TaskStatus.FAILED)

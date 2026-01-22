@@ -14,6 +14,7 @@ from ollama_manager import OllamaManager
 from mcp_manager import MCPManager
 from chat_service import ChatService
 from app import router, set_chat_service, set_ollama_manager
+from task_manager import task_manager
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,10 @@ async def lifespan(app: FastAPI):
         # Set global chat service for router
         set_chat_service(chat_service)
 
+        # Start task manager cleanup
+        task_manager.start_cleanup()
+        logger.info("Task manager background cleanup started")
+
         logger.info("=== MCP Backend Server Ready ===")
         logger.info(f"Tools available: {chat_service.get_tools_count()}")
 
@@ -70,6 +75,10 @@ async def lifespan(app: FastAPI):
     finally:
         # Cleanup
         logger.info("=== MCP Backend Server Shutting Down ===")
+
+        # Stop task manager cleanup
+        await task_manager.stop_cleanup()
+        logger.info("Task manager cleanup stopped")
 
         if mcp_context:
             try:
