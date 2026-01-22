@@ -65,7 +65,7 @@ class TelegramBot:
 
             # Poll for result with progress updates
             interval = 30  # Poll every 30 seconds
-            max_wait = 600  # 10 minutes max
+            max_wait = 1800  # 10 minutes max
             elapsed = 0
 
             while elapsed < max_wait:

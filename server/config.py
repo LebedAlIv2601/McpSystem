@@ -17,6 +17,10 @@ if not BACKEND_API_KEY:
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 
+# Ollama Chat Parameters
+OLLAMA_CHAT_TEMPERATURE = 0.1
+OLLAMA_CHAT_MAX_TOKENS = 2000
+
 # OpenRouter Configuration (optional, for embeddings in RAG)
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v3.2")

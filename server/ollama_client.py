@@ -51,7 +51,9 @@ class OllamaClient:
         self,
         messages: List[Dict[str, str]],
         tools: Optional[List[Dict[str, Any]]] = None,
-        tool_choice: Optional[str] = None
+        tool_choice: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None
     ) -> Tuple[Optional[str], Optional[List[Dict[str, Any]]]]:
         """
         Send chat completion request to Ollama.
@@ -60,6 +62,8 @@ class OllamaClient:
             messages: Conversation history
             tools: Available tools in Ollama format
             tool_choice: Tool selection strategy ("auto", "required", "none")
+            temperature: Sampling temperature (0.0-1.0)
+            max_tokens: Maximum tokens to generate
 
         Returns:
             Tuple of (response_text, tool_calls)
@@ -71,6 +75,16 @@ class OllamaClient:
             "messages": messages,
             "stream": False
         }
+
+        # Add options if temperature or max_tokens are specified
+        options = {}
+        if temperature is not None:
+            options["temperature"] = temperature
+        if max_tokens is not None:
+            options["num_predict"] = max_tokens  # Ollama uses num_predict instead of max_tokens
+
+        if options:
+            payload["options"] = options
 
         # if tools:
         #     payload["tools"] = tools

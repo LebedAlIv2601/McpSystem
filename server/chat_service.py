@@ -6,11 +6,11 @@ import logging
 from datetime import datetime
 from typing import Optional, Tuple
 
-from config import ESSENTIAL_TOOLS, MCP_USED_INDICATOR
+from config import ESSENTIAL_TOOLS, MCP_USED_INDICATOR, OLLAMA_CHAT_TEMPERATURE, OLLAMA_CHAT_MAX_TOKENS
 from conversation import ConversationManager
 from ollama_client import OllamaClient
 from mcp_manager import MCPManager
-from prompts import get_pr_review_prompt
+from prompts import get_pr_review_prompt, get_chat_prompt
 from task_manager import task_manager, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -91,32 +91,11 @@ class ChatService:
 
         system_prompt = {
             "role": "system",
-            "content": f"""Current date: {current_date}.
-
-You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/EasyPomodoro).
-
-**CRITICAL RULES:**
-- NEVER say "let me look at..." or "I will check..." - just CALL the tool immediately
-- If you need information, CALL a tool. Do NOT describe your intention.
-- Do NOT respond until you have ALL the information needed to give a COMPLETE answer
-- You can call multiple tools in sequence - keep calling until you have everything
-
-**TOOLS:**
-1. **get_project_structure** - Get directory tree. USE FIRST to find file paths!
-2. **get_file_contents** - Read file content (owner="LebedAlIv2601", repo="EasyPomodoro", path="...")
-3. **rag_query** - Search project documentation semantically
-4. **list_commits**, **list_issues**, **list_pull_requests** - GitHub items
-
-**WORKFLOW:**
-1. For code questions: get_project_structure -> get_file_contents (repeat as needed)
-2. For architecture/design: rag_query
-3. ONLY respond with final answer AFTER gathering ALL necessary information
-
-Respond in user's language."""
+            "content": get_chat_prompt(current_date)
         }
 
-        # messages_with_system = [system_prompt] + conversation_history
-        messages_with_system = conversation_history
+        messages_with_system = [system_prompt] + conversation_history
+        # messages_with_system = conversation_history
         mcp_was_used = False
         total_tool_calls = 0
 
@@ -132,7 +111,7 @@ Respond in user's language."""
                 iteration += 1
                 logger.info(f"User {user_id}: Tool call iteration {iteration}/{max_iterations}")
 
-                # On last iteration, disable tools to force final response
+                # OnОтвет last iteration, disable tools to force final response
                 is_last_iteration = (iteration == max_iterations)
                 # current_tools = None if is_last_iteration else self.ollama_tools
                 current_tools = None
@@ -142,7 +121,9 @@ Respond in user's language."""
                 response_text, tool_calls = await self.ollama_client.chat_completion(
                     messages=current_messages,
                     tools=current_tools if current_tools else None,
-                    tool_choice=current_tool_choice
+                    tool_choice=current_tool_choice,
+                    temperature=OLLAMA_CHAT_TEMPERATURE,
+                    max_tokens=OLLAMA_CHAT_MAX_TOKENS
                 )
 
                 if not tool_calls:
@@ -160,7 +141,9 @@ Respond in user's language."""
                         response_text, _ = await self.ollama_client.chat_completion(
                             messages=current_messages,
                             tools=None,
-                            tool_choice=None
+                            tool_choice=None,
+                            temperature=OLLAMA_CHAT_TEMPERATURE,
+                            max_tokens=OLLAMA_CHAT_MAX_TOKENS
                         )
                     break
 

@@ -207,14 +207,14 @@ class BackendClient:
             logger.error(f"Get task status error: {e}", exc_info=True)
             raise
 
-    async def poll_task(self, task_id: str, interval: int = 30, max_wait: int = 600) -> Tuple[str, bool]:
+    async def poll_task(self, task_id: str, interval: int = 30, max_wait: int = 1800) -> Tuple[str, bool]:
         """
         Poll task until completed or failed.
 
         Args:
             task_id: Task ID from submit_chat_async
             interval: Polling interval in seconds (default: 30)
-            max_wait: Maximum wait time in seconds (default: 600 = 10 minutes)
+            max_wait: Maximum wait time in seconds (default: 1800 = 30 minutes)
 
         Returns:
             Tuple of (response_text, mcp_was_used)
