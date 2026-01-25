@@ -4,5 +4,8 @@ python-telegram-bot>=21.0
 # HTTP client
 httpx>=0.28.0
 
+# MCP SDK
+mcp>=1.0.0
+
 # Environment
 python-dotenv>=1.0.0

@@ -2,14 +2,17 @@
 
 import asyncio
 import logging
+import json
 from typing import Optional
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TimedOut, NetworkError
 
-from config import TELEGRAM_BOT_TOKEN, WELCOME_MESSAGE, ERROR_MESSAGE
+from config import TELEGRAM_BOT_TOKEN, WELCOME_MESSAGE, ERROR_MESSAGE, ANALYTICS_KEYWORDS
 from ollama_client import OllamaClient
+from analytics_manager import AnalyticsManager
+from analytics_prompts import get_analytics_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +35,74 @@ async def retry_telegram_call(func, *args, max_retries=3, **kwargs):
 class TelegramBot:
     """Telegram bot for EasyPomodoro project consultation."""
 
-    def __init__(self):
+    def __init__(self, analytics_manager: AnalyticsManager):
         self.ollama_client = OllamaClient()
+        self.analytics_manager = analytics_manager
         self.application: Optional[Application] = None
+
+    def _is_analytics_query(self, message: str) -> bool:
+        """Check if message is an analytics query."""
+        message_lower = message.lower()
+        return any(keyword in message_lower for keyword in ANALYTICS_KEYWORDS)
+
+    async def _handle_analytics_query(self, user_message: str) -> str:
+        """Handle analytics query using MCP tools."""
+        try:
+            # Determine which analytics tool to use based on keywords
+            message_lower = user_message.lower()
+            analytics_data = None
+
+            if any(word in message_lower for word in ["ошибк", "error"]):
+                logger.info("Calling analyze_errors tool")
+                analytics_data = await self.analytics_manager.analyze_errors()
+                tool_name = "analyze_errors"
+
+            elif any(word in message_lower for word in ["воронк", "funnel", "конверс", "conversion"]):
+                logger.info("Calling analyze_funnel tool")
+                analytics_data = await self.analytics_manager.analyze_funnel()
+                tool_name = "analyze_funnel"
+
+            elif any(word in message_lower for word in ["теряю", "dropoff", "отток", "abandon"]):
+                logger.info("Calling analyze_dropoff tool")
+                analytics_data = await self.analytics_manager.analyze_dropoff()
+                tool_name = "analyze_dropoff"
+
+            elif any(word in message_lower for word in ["статистик", "statistic", "общ"]):
+                logger.info("Calling get_statistics tool")
+                analytics_data = await self.analytics_manager.get_statistics()
+                tool_name = "get_statistics"
+
+            else:
+                # Default to statistics for general analytics queries
+                logger.info("Calling get_statistics tool (default)")
+                analytics_data = await self.analytics_manager.get_statistics()
+                tool_name = "get_statistics"
+
+            # Format data for Ollama
+            analytics_context = f"""Вопрос пользователя: {user_message}
+
+Использованный инструмент: {tool_name}
+
+Данные из системы аналитики:
+```json
+{json.dumps(analytics_data, ensure_ascii=False, indent=2)}
+```
+
+Проанализируй эти данные и дай структурированный ответ на вопрос пользователя.
+"""
+
+            # Send to Ollama with analytics system prompt
+            response = await self.ollama_client.send_message_with_system_prompt(
+                user_id="analytics",
+                message=analytics_context,
+                system_prompt=get_analytics_prompt()
+            )
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Analytics query error: {e}", exc_info=True)
+            return f"Ошибка при анализе данных: {str(e)}"
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
@@ -55,11 +123,17 @@ class TelegramBot:
             # Show thinking indicator
             thinking_msg = await retry_telegram_call(update.message.reply_text, "Думаю...")
 
-            # Send message to Ollama
-            response_text = await self.ollama_client.send_message(
-                user_id=str(user_id),
-                message=user_message
-            )
+            # Check if this is an analytics query
+            if self._is_analytics_query(user_message):
+                logger.info(f"User {user_id}: Analytics query detected")
+                response_text = await self._handle_analytics_query(user_message)
+            else:
+                # Regular message - send to Ollama
+                logger.info(f"User {user_id}: Regular query")
+                response_text = await self.ollama_client.send_message(
+                    user_id=str(user_id),
+                    message=user_message
+                )
 
             # Delete thinking message
             await retry_telegram_call(thinking_msg.delete)

@@ -1,0 +1,1122 @@
+[
+  {
+    "event_id": "evt_001",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:15:00Z",
+    "event_type": "session_start",
+    "screen": "catalog",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_002",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:15:05Z",
+    "event_type": "screen_view",
+    "screen": "catalog",
+    "properties": {
+      "category": "electronics"
+    }
+  },
+  {
+    "event_id": "evt_003",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:16:20Z",
+    "event_type": "button_click",
+    "screen": "catalog",
+    "properties": {
+      "button_name": "view_product",
+      "product_id": "prod_123"
+    }
+  },
+  {
+    "event_id": "evt_004",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:16:25Z",
+    "event_type": "screen_view",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_123",
+      "product_name": "Wireless Headphones"
+    }
+  },
+  {
+    "event_id": "evt_005",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:17:40Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "add_to_cart",
+      "product_id": "prod_123"
+    }
+  },
+  {
+    "event_id": "evt_006",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:17:42Z",
+    "event_type": "add_to_cart",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_123",
+      "quantity": 1,
+      "price": 79.99
+    }
+  },
+  {
+    "event_id": "evt_007",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:17:50Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "view_cart"
+    }
+  },
+  {
+    "event_id": "evt_008",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:17:55Z",
+    "event_type": "screen_view",
+    "screen": "cart",
+    "properties": {
+      "items_count": 1,
+      "total": 79.99
+    }
+  },
+  {
+    "event_id": "evt_009",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:18:30Z",
+    "event_type": "button_click",
+    "screen": "cart",
+    "properties": {
+      "button_name": "checkout"
+    }
+  },
+  {
+    "event_id": "evt_010",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:18:35Z",
+    "event_type": "screen_view",
+    "screen": "checkout",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_011",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:20:15Z",
+    "event_type": "form_submit",
+    "screen": "checkout",
+    "properties": {
+      "form_name": "delivery_address",
+      "success": true
+    }
+  },
+  {
+    "event_id": "evt_012",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:20:20Z",
+    "event_type": "screen_view",
+    "screen": "payment",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_013",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:21:10Z",
+    "event_type": "button_click",
+    "screen": "payment",
+    "properties": {
+      "button_name": "pay_now",
+      "payment_method": "credit_card"
+    }
+  },
+  {
+    "event_id": "evt_014",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:21:15Z",
+    "event_type": "screen_view",
+    "screen": "confirmation",
+    "properties": {
+      "order_id": "order_001",
+      "total": 79.99
+    }
+  },
+  {
+    "event_id": "evt_015",
+    "user_id": "user_001",
+    "session_id": "session_001",
+    "timestamp": "2026-01-25T10:21:20Z",
+    "event_type": "session_end",
+    "screen": "confirmation",
+    "properties": {
+      "session_duration": 365
+    }
+  },
+  {
+    "event_id": "evt_016",
+    "user_id": "user_002",
+    "session_id": "session_002",
+    "timestamp": "2026-01-25T10:22:00Z",
+    "event_type": "session_start",
+    "screen": "catalog",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_017",
+    "user_id": "user_002",
+    "session_id": "session_002",
+    "timestamp": "2026-01-25T10:22:05Z",
+    "event_type": "screen_view",
+    "screen": "catalog",
+    "properties": {
+      "category": "clothing"
+    }
+  },
+  {
+    "event_id": "evt_018",
+    "user_id": "user_002",
+    "session_id": "session_002",
+    "timestamp": "2026-01-25T10:23:00Z",
+    "event_type": "button_click",
+    "screen": "catalog",
+    "properties": {
+      "button_name": "view_product",
+      "product_id": "prod_456"
+    }
+  },
+  {
+    "event_id": "evt_019",
+    "user_id": "user_002",
+    "session_id": "session_002",
+    "timestamp": "2026-01-25T10:23:05Z",
+    "event_type": "screen_view",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_456",
+      "product_name": "Winter Jacket"
+    }
+  },
+  {
+    "event_id": "evt_020",
+    "user_id": "user_002",
+    "session_id": "session_002",
+    "timestamp": "2026-01-25T10:24:00Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "add_to_cart",
+      "product_id": "prod_456"
+    }
+  },
+  {
+    "event_id": "evt_021",
+    "user_id": "user_002",
+    "session_id": "session_002",
+    "timestamp": "2026-01-25T10:24:02Z",
+    "event_type": "add_to_cart",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_456",
+      "quantity": 1,
+      "price": 129.99
+    }
+  },
+  {
+    "event_id": "evt_022",
+    "user_id": "user_002",
+    "session_id": "session_002",
+    "timestamp": "2026-01-25T10:24:30Z",
+    "event_type": "session_end",
+    "screen": "product",
+    "properties": {
+      "session_duration": 150
+    }
+  },
+  {
+    "event_id": "evt_023",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:30:00Z",
+    "event_type": "session_start",
+    "screen": "catalog",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_024",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:30:10Z",
+    "event_type": "screen_view",
+    "screen": "catalog",
+    "properties": {
+      "category": "electronics"
+    }
+  },
+  {
+    "event_id": "evt_025",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:31:00Z",
+    "event_type": "button_click",
+    "screen": "catalog",
+    "properties": {
+      "button_name": "view_product",
+      "product_id": "prod_789"
+    }
+  },
+  {
+    "event_id": "evt_026",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:31:05Z",
+    "event_type": "screen_view",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_789",
+      "product_name": "Smart Watch"
+    }
+  },
+  {
+    "event_id": "evt_027",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:32:00Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "add_to_cart",
+      "product_id": "prod_789"
+    }
+  },
+  {
+    "event_id": "evt_028",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:32:02Z",
+    "event_type": "add_to_cart",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_789",
+      "quantity": 1,
+      "price": 199.99
+    }
+  },
+  {
+    "event_id": "evt_029",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:32:10Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "view_cart"
+    }
+  },
+  {
+    "event_id": "evt_030",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:32:15Z",
+    "event_type": "screen_view",
+    "screen": "cart",
+    "properties": {
+      "items_count": 1,
+      "total": 199.99
+    }
+  },
+  {
+    "event_id": "evt_031",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:33:00Z",
+    "event_type": "button_click",
+    "screen": "cart",
+    "properties": {
+      "button_name": "checkout"
+    }
+  },
+  {
+    "event_id": "evt_032",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:33:05Z",
+    "event_type": "screen_view",
+    "screen": "checkout",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_033",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:35:00Z",
+    "event_type": "form_submit",
+    "screen": "checkout",
+    "properties": {
+      "form_name": "delivery_address",
+      "success": true
+    }
+  },
+  {
+    "event_id": "evt_034",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:35:05Z",
+    "event_type": "screen_view",
+    "screen": "payment",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_035",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:36:00Z",
+    "event_type": "button_click",
+    "screen": "payment",
+    "properties": {
+      "button_name": "pay_now",
+      "payment_method": "credit_card"
+    }
+  },
+  {
+    "event_id": "evt_036",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:36:05Z",
+    "event_type": "error",
+    "screen": "payment",
+    "properties": {
+      "error_code": "PAYMENT_DECLINED",
+      "error_message": "Card declined by bank"
+    }
+  },
+  {
+    "event_id": "evt_037",
+    "user_id": "user_003",
+    "session_id": "session_003",
+    "timestamp": "2026-01-25T10:36:10Z",
+    "event_type": "session_end",
+    "screen": "payment",
+    "properties": {
+      "session_duration": 370
+    }
+  },
+  {
+    "event_id": "evt_038",
+    "user_id": "user_004",
+    "session_id": "session_004",
+    "timestamp": "2026-01-25T11:00:00Z",
+    "event_type": "session_start",
+    "screen": "catalog",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_039",
+    "user_id": "user_004",
+    "session_id": "session_004",
+    "timestamp": "2026-01-25T11:00:10Z",
+    "event_type": "screen_view",
+    "screen": "catalog",
+    "properties": {
+      "category": "home"
+    }
+  },
+  {
+    "event_id": "evt_040",
+    "user_id": "user_004",
+    "session_id": "session_004",
+    "timestamp": "2026-01-25T11:01:00Z",
+    "event_type": "session_end",
+    "screen": "catalog",
+    "properties": {
+      "session_duration": 60
+    }
+  },
+  {
+    "event_id": "evt_041",
+    "user_id": "user_005",
+    "session_id": "session_005",
+    "timestamp": "2026-01-25T11:15:00Z",
+    "event_type": "session_start",
+    "screen": "catalog",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_042",
+    "user_id": "user_005",
+    "session_id": "session_005",
+    "timestamp": "2026-01-25T11:15:10Z",
+    "event_type": "screen_view",
+    "screen": "catalog",
+    "properties": {
+      "category": "sports"
+    }
+  },
+  {
+    "event_id": "evt_043",
+    "user_id": "user_005",
+    "session_id": "session_005",
+    "timestamp": "2026-01-25T11:16:00Z",
+    "event_type": "button_click",
+    "screen": "catalog",
+    "properties": {
+      "button_name": "view_product",
+      "product_id": "prod_111"
+    }
+  },
+  {
+    "event_id": "evt_044",
+    "user_id": "user_005",
+    "session_id": "session_005",
+    "timestamp": "2026-01-25T11:16:05Z",
+    "event_type": "screen_view",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_111",
+      "product_name": "Running Shoes"
+    }
+  },
+  {
+    "event_id": "evt_045",
+    "user_id": "user_005",
+    "session_id": "session_005",
+    "timestamp": "2026-01-25T11:17:00Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "add_to_cart",
+      "product_id": "prod_111"
+    }
+  },
+  {
+    "event_id": "evt_046",
+    "user_id": "user_005",
+    "session_id": "session_005",
+    "timestamp": "2026-01-25T11:17:02Z",
+    "event_type": "add_to_cart",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_111",
+      "quantity": 1,
+      "price": 89.99
+    }
+  },
+  {
+    "event_id": "evt_047",
+    "user_id": "user_005",
+    "session_id": "session_005",
+    "timestamp": "2026-01-25T11:17:10Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "view_cart"
+    }
+  },
+  {
+    "event_id": "evt_048",
+    "user_id": "user_005",
+    "session_id": "session_005",
+    "timestamp": "2026-01-25T11:17:15Z",
+    "event_type": "screen_view",
+    "screen": "cart",
+    "properties": {
+      "items_count": 1,
+      "total": 89.99
+    }
+  },
+  {
+    "event_id": "evt_049",
+    "user_id": "user_005",
+    "session_id": "session_005",
+    "timestamp": "2026-01-25T11:17:30Z",
+    "event_type": "session_end",
+    "screen": "cart",
+    "properties": {
+      "session_duration": 150
+    }
+  },
+  {
+    "event_id": "evt_050",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:30:00Z",
+    "event_type": "session_start",
+    "screen": "catalog",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_051",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:30:10Z",
+    "event_type": "screen_view",
+    "screen": "catalog",
+    "properties": {
+      "category": "electronics"
+    }
+  },
+  {
+    "event_id": "evt_052",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:31:00Z",
+    "event_type": "button_click",
+    "screen": "catalog",
+    "properties": {
+      "button_name": "view_product",
+      "product_id": "prod_222"
+    }
+  },
+  {
+    "event_id": "evt_053",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:31:05Z",
+    "event_type": "screen_view",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_222",
+      "product_name": "Laptop"
+    }
+  },
+  {
+    "event_id": "evt_054",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:32:00Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "add_to_cart",
+      "product_id": "prod_222"
+    }
+  },
+  {
+    "event_id": "evt_055",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:32:02Z",
+    "event_type": "add_to_cart",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_222",
+      "quantity": 1,
+      "price": 999.99
+    }
+  },
+  {
+    "event_id": "evt_056",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:32:10Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "view_cart"
+    }
+  },
+  {
+    "event_id": "evt_057",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:32:15Z",
+    "event_type": "screen_view",
+    "screen": "cart",
+    "properties": {
+      "items_count": 1,
+      "total": 999.99
+    }
+  },
+  {
+    "event_id": "evt_058",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:33:00Z",
+    "event_type": "button_click",
+    "screen": "cart",
+    "properties": {
+      "button_name": "checkout"
+    }
+  },
+  {
+    "event_id": "evt_059",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:33:05Z",
+    "event_type": "screen_view",
+    "screen": "checkout",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_060",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:35:00Z",
+    "event_type": "form_submit",
+    "screen": "checkout",
+    "properties": {
+      "form_name": "delivery_address",
+      "success": false
+    }
+  },
+  {
+    "event_id": "evt_061",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:35:02Z",
+    "event_type": "error",
+    "screen": "checkout",
+    "properties": {
+      "error_code": "INVALID_ADDRESS",
+      "error_message": "Invalid postal code format"
+    }
+  },
+  {
+    "event_id": "evt_062",
+    "user_id": "user_006",
+    "session_id": "session_006",
+    "timestamp": "2026-01-25T11:35:10Z",
+    "event_type": "session_end",
+    "screen": "checkout",
+    "properties": {
+      "session_duration": 310
+    }
+  },
+  {
+    "event_id": "evt_063",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:00:00Z",
+    "event_type": "session_start",
+    "screen": "catalog",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_064",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:00:10Z",
+    "event_type": "screen_view",
+    "screen": "catalog",
+    "properties": {
+      "category": "books"
+    }
+  },
+  {
+    "event_id": "evt_065",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:01:00Z",
+    "event_type": "button_click",
+    "screen": "catalog",
+    "properties": {
+      "button_name": "view_product",
+      "product_id": "prod_333"
+    }
+  },
+  {
+    "event_id": "evt_066",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:01:05Z",
+    "event_type": "screen_view",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_333",
+      "product_name": "Programming Book"
+    }
+  },
+  {
+    "event_id": "evt_067",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:02:00Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "add_to_cart",
+      "product_id": "prod_333"
+    }
+  },
+  {
+    "event_id": "evt_068",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:02:02Z",
+    "event_type": "add_to_cart",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_333",
+      "quantity": 2,
+      "price": 49.99
+    }
+  },
+  {
+    "event_id": "evt_069",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:02:10Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "view_cart"
+    }
+  },
+  {
+    "event_id": "evt_070",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:02:15Z",
+    "event_type": "screen_view",
+    "screen": "cart",
+    "properties": {
+      "items_count": 2,
+      "total": 99.98
+    }
+  },
+  {
+    "event_id": "evt_071",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:03:00Z",
+    "event_type": "button_click",
+    "screen": "cart",
+    "properties": {
+      "button_name": "checkout"
+    }
+  },
+  {
+    "event_id": "evt_072",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:03:05Z",
+    "event_type": "screen_view",
+    "screen": "checkout",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_073",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:05:00Z",
+    "event_type": "form_submit",
+    "screen": "checkout",
+    "properties": {
+      "form_name": "delivery_address",
+      "success": true
+    }
+  },
+  {
+    "event_id": "evt_074",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:05:05Z",
+    "event_type": "screen_view",
+    "screen": "payment",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_075",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:06:00Z",
+    "event_type": "button_click",
+    "screen": "payment",
+    "properties": {
+      "button_name": "pay_now",
+      "payment_method": "paypal"
+    }
+  },
+  {
+    "event_id": "evt_076",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:06:05Z",
+    "event_type": "screen_view",
+    "screen": "confirmation",
+    "properties": {
+      "order_id": "order_002",
+      "total": 99.98
+    }
+  },
+  {
+    "event_id": "evt_077",
+    "user_id": "user_007",
+    "session_id": "session_007",
+    "timestamp": "2026-01-25T12:06:10Z",
+    "event_type": "session_end",
+    "screen": "confirmation",
+    "properties": {
+      "session_duration": 370
+    }
+  },
+  {
+    "event_id": "evt_078",
+    "user_id": "user_008",
+    "session_id": "session_008",
+    "timestamp": "2026-01-25T12:15:00Z",
+    "event_type": "session_start",
+    "screen": "catalog",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_079",
+    "user_id": "user_008",
+    "session_id": "session_008",
+    "timestamp": "2026-01-25T12:15:10Z",
+    "event_type": "screen_view",
+    "screen": "catalog",
+    "properties": {
+      "category": "electronics"
+    }
+  },
+  {
+    "event_id": "evt_080",
+    "user_id": "user_008",
+    "session_id": "session_008",
+    "timestamp": "2026-01-25T12:16:00Z",
+    "event_type": "error",
+    "screen": "catalog",
+    "properties": {
+      "error_code": "NETWORK_ERROR",
+      "error_message": "Failed to load products"
+    }
+  },
+  {
+    "event_id": "evt_081",
+    "user_id": "user_008",
+    "session_id": "session_008",
+    "timestamp": "2026-01-25T12:16:05Z",
+    "event_type": "session_end",
+    "screen": "catalog",
+    "properties": {
+      "session_duration": 65
+    }
+  },
+  {
+    "event_id": "evt_082",
+    "user_id": "user_009",
+    "session_id": "session_009",
+    "timestamp": "2026-01-25T13:00:00Z",
+    "event_type": "session_start",
+    "screen": "catalog",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_083",
+    "user_id": "user_009",
+    "session_id": "session_009",
+    "timestamp": "2026-01-25T13:00:10Z",
+    "event_type": "screen_view",
+    "screen": "catalog",
+    "properties": {
+      "category": "toys"
+    }
+  },
+  {
+    "event_id": "evt_084",
+    "user_id": "user_009",
+    "session_id": "session_009",
+    "timestamp": "2026-01-25T13:01:00Z",
+    "event_type": "button_click",
+    "screen": "catalog",
+    "properties": {
+      "button_name": "view_product",
+      "product_id": "prod_444"
+    }
+  },
+  {
+    "event_id": "evt_085",
+    "user_id": "user_009",
+    "session_id": "session_009",
+    "timestamp": "2026-01-25T13:01:05Z",
+    "event_type": "screen_view",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_444",
+      "product_name": "LEGO Set"
+    }
+  },
+  {
+    "event_id": "evt_086",
+    "user_id": "user_009",
+    "session_id": "session_009",
+    "timestamp": "2026-01-25T13:01:30Z",
+    "event_type": "session_end",
+    "screen": "product",
+    "properties": {
+      "session_duration": 90
+    }
+  },
+  {
+    "event_id": "evt_087",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:15:00Z",
+    "event_type": "session_start",
+    "screen": "catalog",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_088",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:15:10Z",
+    "event_type": "screen_view",
+    "screen": "catalog",
+    "properties": {
+      "category": "electronics"
+    }
+  },
+  {
+    "event_id": "evt_089",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:16:00Z",
+    "event_type": "button_click",
+    "screen": "catalog",
+    "properties": {
+      "button_name": "view_product",
+      "product_id": "prod_555"
+    }
+  },
+  {
+    "event_id": "evt_090",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:16:05Z",
+    "event_type": "screen_view",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_555",
+      "product_name": "Tablet"
+    }
+  },
+  {
+    "event_id": "evt_091",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:17:00Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "add_to_cart",
+      "product_id": "prod_555"
+    }
+  },
+  {
+    "event_id": "evt_092",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:17:02Z",
+    "event_type": "add_to_cart",
+    "screen": "product",
+    "properties": {
+      "product_id": "prod_555",
+      "quantity": 1,
+      "price": 399.99
+    }
+  },
+  {
+    "event_id": "evt_093",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:17:10Z",
+    "event_type": "button_click",
+    "screen": "product",
+    "properties": {
+      "button_name": "view_cart"
+    }
+  },
+  {
+    "event_id": "evt_094",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:17:15Z",
+    "event_type": "screen_view",
+    "screen": "cart",
+    "properties": {
+      "items_count": 1,
+      "total": 399.99
+    }
+  },
+  {
+    "event_id": "evt_095",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:18:00Z",
+    "event_type": "button_click",
+    "screen": "cart",
+    "properties": {
+      "button_name": "checkout"
+    }
+  },
+  {
+    "event_id": "evt_096",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:18:05Z",
+    "event_type": "screen_view",
+    "screen": "checkout",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_097",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:20:00Z",
+    "event_type": "form_submit",
+    "screen": "checkout",
+    "properties": {
+      "form_name": "delivery_address",
+      "success": true
+    }
+  },
+  {
+    "event_id": "evt_098",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:20:05Z",
+    "event_type": "screen_view",
+    "screen": "payment",
+    "properties": {}
+  },
+  {
+    "event_id": "evt_099",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:21:00Z",
+    "event_type": "button_click",
+    "screen": "payment",
+    "properties": {
+      "button_name": "pay_now",
+      "payment_method": "credit_card"
+    }
+  },
+  {
+    "event_id": "evt_100",
+    "user_id": "user_010",
+    "session_id": "session_010",
+    "timestamp": "2026-01-25T13:21:05Z",
+    "event_type": "error",
+    "screen": "payment",
+    "properties": {
+      "error_code": "PAYMENT_TIMEOUT",
+      "error_message": "Payment gateway timeout"
+    }
+  }
+]

@@ -19,11 +19,18 @@ if not TELEGRAM_BOT_TOKEN:
 # if not BACKEND_API_KEY:
 #     raise ValueError("BACKEND_API_KEY not found in .env file")
 
+# Analytics Configuration
+ANALYTICS_KEYWORDS = [
+    "ошибк", "error", "аналитик", "analytics", "статистик", "statistic",
+    "воронк", "funnel", "конверс", "conversion", "пользовател", "user",
+    "теряю", "dropoff", "отток", "abandon", "данны", "data"
+]
+
 # Bot messages
 WELCOME_MESSAGE = """Добро пожаловать в EasyPomodoro Project Consultant!
 
-Я локальный AI-ассистент на базе Ollama (llama3.1:8b).
-Готов ответить на ваши вопросы о проекте EasyPomodoro.
+Я локальный AI-ассистент на базе Ollama (llama3.1:8b) с модулем аналитики данных.
+Готов ответить на ваши вопросы о проекте EasyPomodoro и проанализировать данные использования приложения.
 
 Просто задайте мне любой вопрос!
 
@@ -31,6 +38,12 @@ WELCOME_MESSAGE = """Добро пожаловать в EasyPomodoro Project Con
 - Расскажи о проекте EasyPomodoro
 - Какие основные функции есть в приложении?
 - Помоги с Android разработкой
-- Объясни концепцию Pomodoro техники"""
+- Объясни концепцию Pomodoro техники
+
+Аналитические вопросы:
+- Какие ошибки чаще всего получают пользователи?
+- Где больше всего пользователей теряется?
+- Какая конверсия в покупку?
+- Покажи общую статистику"""
 
 ERROR_MESSAGE = "Извините, произошла ошибка. Пожалуйста, попробуйте еще раз."

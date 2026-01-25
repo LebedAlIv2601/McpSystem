@@ -8,6 +8,7 @@ import sys
 from logger import setup_logging
 from bot import TelegramBot
 from ollama_manager import OllamaManager
+from analytics_manager import AnalyticsManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class Application:
 
     def __init__(self):
         self.ollama_manager: OllamaManager = None
+        self.analytics_manager: AnalyticsManager = None
         self.bot: TelegramBot = None
         self.shutdown_event = asyncio.Event()
 
@@ -28,8 +30,12 @@ class Application:
         self.ollama_manager = OllamaManager()
         await self.ollama_manager.start()
 
+        # Start Analytics MCP manager
+        self.analytics_manager = AnalyticsManager()
+        await self.analytics_manager.start()
+
         # Start Telegram bot
-        self.bot = TelegramBot()
+        self.bot = TelegramBot(analytics_manager=self.analytics_manager)
         await self.bot.run()
 
         logger.info("Application startup completed")
@@ -40,6 +46,9 @@ class Application:
 
         if self.bot:
             await self.bot.stop()
+
+        if self.analytics_manager:
+            await self.analytics_manager.stop()
 
         if self.ollama_manager:
             self.ollama_manager.stop()

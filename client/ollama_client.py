@@ -117,6 +117,78 @@ class OllamaClient:
             logger.error(f"Ollama request error: {e}", exc_info=True)
             raise
 
+    async def send_message_with_system_prompt(
+        self,
+        user_id: str,
+        message: str,
+        system_prompt: str
+    ) -> str:
+        """
+        Send message to Ollama with custom system prompt.
+        Does not use conversation history.
+
+        Args:
+            user_id: Unique user identifier (for logging)
+            message: User message text
+            system_prompt: System prompt to guide the model
+
+        Returns:
+            Response text from model
+
+        Raises:
+            Exception: If Ollama request fails
+        """
+        client = await self._get_client()
+        url = f"{self.ollama_url}/api/chat"
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message}
+        ]
+
+        payload = {
+            "model": self.model_name,
+            "messages": messages,
+            "stream": False
+        }
+
+        logger.info(f"Sending request to Ollama with system prompt: user={user_id}, model={self.model_name}")
+
+        try:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+
+            data = response.json()
+
+            # Extract assistant response
+            assistant_message = data.get("message", {})
+            response_text = assistant_message.get("content", "")
+
+            if not response_text:
+                logger.warning("Empty response from Ollama")
+                response_text = "Извините, я не смог сгенерировать ответ."
+
+            logger.info(f"Ollama response received for user {user_id}")
+
+            return response_text
+
+        except httpx.HTTPStatusError as e:
+            error_body = e.response.text
+            logger.error(f"Ollama HTTP error {e.response.status_code}: {error_body}")
+
+            if e.response.status_code == 404:
+                raise Exception(f"Model {self.model_name} not found. Run: ollama pull {self.model_name}")
+            else:
+                raise Exception(f"Ollama error: {e.response.status_code}")
+
+        except httpx.ConnectError:
+            logger.error(f"Cannot connect to Ollama at {self.ollama_url}")
+            raise Exception("Cannot connect to Ollama service")
+
+        except Exception as e:
+            logger.error(f"Ollama request error: {e}", exc_info=True)
+            raise
+
     def clear_conversation(self, user_id: str) -> None:
         """Clear conversation history for user."""
         if user_id in self._conversation_history:
