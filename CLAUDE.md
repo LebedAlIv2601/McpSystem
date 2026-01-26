@@ -129,6 +129,114 @@ Health check endpoint.
 }
 ```
 
+### GET /api/profile/{user_id}
+
+Get user profile for personalization.
+
+**Response:**
+```json
+{
+  "message": "Profile retrieved successfully",
+  "profile": {
+    "name": "Александр",
+    "language": "ru",
+    "timezone": "Europe/Moscow",
+    "development_preferences": {...},
+    "ai_assistant_preferences": {...}
+  }
+}
+```
+
+### PUT /api/profile/{user_id}
+
+Create or update user profile. Supports partial updates.
+
+**Request:**
+```json
+{
+  "data": {
+    "name": "Александр",
+    "language": "ru",
+    "development_preferences": {
+      "primary_language": "Kotlin"
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Profile updated successfully",
+  "profile": {...}
+}
+```
+
+### DELETE /api/profile/{user_id}
+
+Delete user profile (GDPR compliance).
+
+**Response:**
+```json
+{
+  "message": "Profile deleted successfully"
+}
+```
+
+## User Personalization
+
+The system supports comprehensive user personalization through profiles stored in JSON format.
+
+### Profile Structure
+
+User profiles contain:
+- **Basic Info**: name, language, timezone
+- **Communication Preferences**: response style, tone, emoji usage
+- **Development Preferences**: languages, architecture patterns, libraries
+- **Work Habits**: working hours, focus periods
+- **Project Context**: current projects, responsibilities, pain points
+- **AI Behavior**: code explanation style, comment level, testing preferences
+
+### How Personalization Works
+
+1. **Structured Context Injection**: Profile is added to system prompt in structured format
+2. **Model-Driven Relevance**: AI model decides which profile parts to use based on question
+3. **Zero Latency**: No classification overhead, immediate context availability
+4. **Token Efficient**: Only relevant sections are emphasized for model attention
+
+### Telegram Bot Commands
+
+- `/profile` - View current profile (formatted display)
+- `/edit_profile` - Get instructions for profile editing
+- `/profile_example` - Get full example profile JSON
+- `/delete_profile` - Delete profile data
+
+### Profile Update via Telegram
+
+Send JSON message to bot:
+```json
+{
+  "name": "Александр",
+  "language": "ru",
+  "development_preferences": {
+    "primary_language": "Kotlin",
+    "architecture_style": "Clean Architecture + MVI"
+  }
+}
+```
+
+Bot will automatically detect JSON and update profile.
+
+### Profile Example
+
+See `server/data/profile_example.json` for complete example with all available fields.
+
+### Privacy
+
+- Profiles are stored per user_id in `server/data/user_profiles.json`
+- Each user can only access their own profile
+- Full deletion support via API and Telegram commands
+
 ## GitHub Actions Integration
 
 Use the PR review endpoint in your CI/CD pipeline:
@@ -189,6 +297,11 @@ jobs:
 - `auth.py` - API key authentication
 - `config.py` - Configuration and environment variables
 - `logger.py` - Logging configuration
+- `user_profile.py` - Pydantic models for user profiles
+- `profile_storage.py` - JSON storage for profiles (thread-safe)
+- `profile_manager.py` - Profile management and context generation
+- `data/user_profiles.json` - User profile storage
+- `data/profile_example.json` - Example profile template
 
 ### 2. Telegram Bot Client (client/)
 

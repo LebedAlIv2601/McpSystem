@@ -4,8 +4,13 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from auth import verify_api_key
-from schemas import ChatRequest, ChatResponse, HealthResponse, ErrorResponse, ReviewPRRequest, ReviewPRResponse
+from schemas import (
+    ChatRequest, ChatResponse, HealthResponse, ErrorResponse,
+    ReviewPRRequest, ReviewPRResponse,
+    ProfileUpdateRequest, ProfileResponse
+)
 from chat_service import ChatService
+from profile_manager import get_profile_manager
 
 logger = logging.getLogger(__name__)
 
@@ -151,4 +156,136 @@ async def health_check() -> HealthResponse:
         status="healthy",
         mcp_connected=True,
         tools_count=_chat_service.get_tools_count()
+    )
+
+
+@router.get(
+    "/api/profile/{user_id}",
+    response_model=ProfileResponse,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid API key"},
+        404: {"model": ErrorResponse, "description": "Profile not found"}
+    },
+    summary="Get user profile",
+    description="Retrieve user profile for personalization."
+)
+async def get_profile(
+    user_id: str,
+    api_key: str = Depends(verify_api_key)
+) -> ProfileResponse:
+    """
+    Get user profile by ID.
+
+    Args:
+        user_id: User identifier
+        api_key: Validated API key
+
+    Returns:
+        ProfileResponse with user profile data
+    """
+    logger.info(f"Get profile request for user {user_id}")
+
+    profile_manager = get_profile_manager()
+    profile = profile_manager.get_profile(user_id)
+
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Profile not found for user {user_id}"
+        )
+
+    return ProfileResponse(
+        message="Profile retrieved successfully",
+        profile=profile.model_dump(mode="json")
+    )
+
+
+@router.put(
+    "/api/profile/{user_id}",
+    response_model=ProfileResponse,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid API key"},
+        400: {"model": ErrorResponse, "description": "Invalid profile data"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    },
+    summary="Update user profile",
+    description="Create or update user profile. Supports partial updates."
+)
+async def update_profile(
+    user_id: str,
+    request: ProfileUpdateRequest,
+    api_key: str = Depends(verify_api_key)
+) -> ProfileResponse:
+    """
+    Update user profile.
+
+    Args:
+        user_id: User identifier
+        request: Profile update data
+        api_key: Validated API key
+
+    Returns:
+        ProfileResponse with updated profile
+    """
+    logger.info(f"Update profile request for user {user_id}")
+
+    try:
+        profile_manager = get_profile_manager()
+        profile = profile_manager.update_profile(user_id, **request.data)
+
+        return ProfileResponse(
+            message="Profile updated successfully",
+            profile=profile.model_dump(mode="json")
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Profile update error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.delete(
+    "/api/profile/{user_id}",
+    response_model=ProfileResponse,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid API key"},
+        404: {"model": ErrorResponse, "description": "Profile not found"}
+    },
+    summary="Delete user profile",
+    description="Delete user profile and all associated data (GDPR compliance)."
+)
+async def delete_profile(
+    user_id: str,
+    api_key: str = Depends(verify_api_key)
+) -> ProfileResponse:
+    """
+    Delete user profile.
+
+    Args:
+        user_id: User identifier
+        api_key: Validated API key
+
+    Returns:
+        ProfileResponse with deletion confirmation
+    """
+    logger.info(f"Delete profile request for user {user_id}")
+
+    profile_manager = get_profile_manager()
+    success = profile_manager.delete_profile(user_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Profile not found for user {user_id}"
+        )
+
+    return ProfileResponse(
+        message="Profile deleted successfully"
     )

@@ -1,0 +1,62 @@
+{
+  "name": "Александр",
+  "language": "ru",
+  "timezone": "Europe/Moscow",
+
+  "personal_info": {
+    "role": "Senior Android Developer",
+    "experience_years": 8,
+    "company": "Your Company"
+  },
+
+  "communication_preferences": {
+    "response_style": "concise",
+    "tone": "professional",
+    "use_emojis": false,
+    "preferred_greeting": "Привет"
+  },
+
+  "development_preferences": {
+    "primary_language": "Kotlin",
+    "secondary_languages": ["Python", "Java"],
+    "architecture_style": "Clean Architecture + MVI",
+    "code_style": "idiomatic_kotlin",
+    "testing_approach": "unit_tests_required",
+    "preferred_libraries": [
+      "Jetpack Compose",
+      "Coroutines",
+      "Room",
+      "Retrofit",
+      "Hilt"
+    ]
+  },
+
+  "work_habits": {
+    "working_hours": "10:00-19:00 MSK",
+    "break_time": "14:00-15:00",
+    "focus_periods": ["10:00-12:00", "16:00-18:00"],
+    "preferred_review_time": "morning"
+  },
+
+  "project_context": {
+    "current_projects": ["EasyPomodoro"],
+    "main_responsibilities": [
+      "Android app development",
+      "Architecture decisions",
+      "Code review"
+    ],
+    "pain_points": [
+      "Legacy code refactoring",
+      "Performance optimization"
+    ]
+  },
+
+  "ai_assistant_preferences": {
+    "explain_code": "step_by_step",
+    "code_comments": "minimal",
+    "suggest_alternatives": true,
+    "ask_before_refactoring": true,
+    "auto_format_code": true,
+    "include_tests": "on_request"
+  }
+}

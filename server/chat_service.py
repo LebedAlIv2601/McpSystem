@@ -10,6 +10,7 @@ from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
 from mcp_manager import MCPManager
 from prompts import get_pr_review_prompt
+from profile_manager import get_profile_manager
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +75,8 @@ class ChatService:
         conversation_history = self.conversation_manager.get_history(user_id)
         current_date = datetime.now().strftime("%Y-%m-%d")
 
-        system_prompt = {
-            "role": "system",
-            "content": f"""Current date: {current_date}.
+        # Build base system prompt
+        base_content = f"""Current date: {current_date}.
 
 You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/EasyPomodoro).
 
@@ -98,6 +98,16 @@ You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/E
 3. ONLY respond with final answer AFTER gathering ALL necessary information
 
 Respond in user's language."""
+
+        # Add personalization context if profile exists
+        profile_manager = get_profile_manager()
+        profile_context = profile_manager.build_context(user_id)
+        if profile_context:
+            base_content += "\n\n" + profile_context
+
+        system_prompt = {
+            "role": "system",
+            "content": base_content
         }
 
         messages_with_system = [system_prompt] + conversation_history

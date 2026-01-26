@@ -1,7 +1,7 @@
 """Pydantic schemas for API request/response models."""
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Any
 
 
 class ChatRequest(BaseModel):
@@ -45,3 +45,17 @@ class ReviewPRResponse(BaseModel):
 
     review: str = Field(..., description="Code review text with file:line references")
     tool_calls_count: int = Field(default=0, description="Number of MCP tool calls made")
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Request model for updating user profile."""
+
+    # Allow partial updates with any fields from UserProfile
+    data: dict[str, Any] = Field(..., description="Profile fields to update")
+
+
+class ProfileResponse(BaseModel):
+    """Response model for profile endpoints."""
+
+    message: str = Field(..., description="Success message")
+    profile: Optional[dict] = Field(None, description="User profile data")

@@ -115,3 +115,81 @@ class BackendClient:
         except Exception as e:
             logger.error(f"Backend health check failed: {e}")
             return False
+
+    async def get_profile(self, user_id: str) -> Optional[dict]:
+        """
+        Get user profile from backend.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Profile dict or None if not found
+        """
+        client = await self._get_client()
+        url = f"{self.backend_url}/api/profile/{user_id}"
+
+        try:
+            response = await client.get(url)
+
+            if response.status_code == 404:
+                return None
+
+            response.raise_for_status()
+            data = response.json()
+            return data.get("profile")
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code != 404:
+                logger.error(f"Get profile error: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Get profile error: {e}")
+            return None
+
+    async def update_profile(self, user_id: str, profile_data: dict) -> bool:
+        """
+        Update user profile on backend.
+
+        Args:
+            user_id: User identifier
+            profile_data: Profile data to update
+
+        Returns:
+            True if successful, False otherwise
+        """
+        client = await self._get_client()
+        url = f"{self.backend_url}/api/profile/{user_id}"
+
+        try:
+            response = await client.put(url, json={"data": profile_data})
+            response.raise_for_status()
+            logger.info(f"Profile updated for user {user_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Update profile error: {e}")
+            return False
+
+    async def delete_profile(self, user_id: str) -> bool:
+        """
+        Delete user profile from backend.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            True if successful, False otherwise
+        """
+        client = await self._get_client()
+        url = f"{self.backend_url}/api/profile/{user_id}"
+
+        try:
+            response = await client.delete(url)
+            response.raise_for_status()
+            logger.info(f"Profile deleted for user {user_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Delete profile error: {e}")
+            return False
