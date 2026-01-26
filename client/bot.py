@@ -60,8 +60,8 @@ class TelegramBot:
                 await retry_telegram_call(update.message.reply_text, message)
                 return
 
-            # Format profile for display
-            msg_parts = [f"👤 *{profile.get('name', 'Пользователь')}*", "━━━━━━━━━━━━━━━━━━━━"]
+            # Format profile for display (plain text, no Markdown to avoid conflicts)
+            msg_parts = [f"👤 {profile.get('name', 'Пользователь')}", "━━━━━━━━━━━━━━━━━━━━"]
 
             # Basic info
             msg_parts.append(f"🌍 Язык: {profile.get('language', 'не указан')}")
@@ -109,8 +109,7 @@ class TelegramBot:
 
             await retry_telegram_call(
                 update.message.reply_text,
-                "\n".join(msg_parts),
-                parse_mode="Markdown"
+                "\n".join(msg_parts)
             )
 
         except Exception as e:
