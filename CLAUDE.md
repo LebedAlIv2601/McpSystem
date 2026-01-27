@@ -8,9 +8,10 @@ This system provides:
 1. **Telegram Bot** - Interactive chat for project questions (text + voice)
 2. **REST API** - Backend with MCP integration for AI-powered responses
 3. **PR Code Review** - Automated pull request reviews via API
-4. **Voice Input** - Send voice messages via Telegram (Russian language)
-5. Browse and analyze project code via GitHub Copilot MCP
-6. Search project documentation using RAG (Retrieval Augmented Generation)
+4. **Voice Input** - Send voice messages via Telegram (Russian language, gpt-audio-mini)
+5. **Local Development** - Run server locally for debugging and development
+6. Browse and analyze project code via GitHub Copilot MCP
+7. Search project documentation using RAG (Retrieval Augmented Generation)
 
 ## Architecture
 
@@ -34,10 +35,13 @@ This system provides:
 │                      FastAPI + MCP                           │
 │                                                              │
 │  Endpoints:                                                  │
-│  ├─ POST /api/chat       - General chat with AI             │
-│  ├─ POST /api/chat-voice - Voice input (STT + AI response)  │
-│  ├─ POST /api/review-pr  - AI code review for PRs           │
-│  └─ GET  /health         - Health check                      │
+│  ├─ POST /api/chat         - General chat with AI           │
+│  ├─ POST /api/chat-voice   - Voice input (gpt-audio-mini)   │
+│  ├─ POST /api/review-pr    - AI code review for PRs         │
+│  ├─ GET  /api/profile/:id  - Get user profile               │
+│  ├─ PUT  /api/profile/:id  - Update user profile            │
+│  ├─ DELETE /api/profile/:id - Delete user profile           │
+│  └─ GET  /health           - Health check                    │
 │                                                              │
 │  Components:                                                 │
 │  ├─ chat_service.py      - Message processing + tool loops  │
@@ -121,7 +125,7 @@ AI-powered code review for pull requests.
 
 ### POST /api/chat-voice
 
-Process voice messages with speech-to-text and AI response.
+Process voice messages with AI audio model (gpt-audio-mini).
 
 **Request:**
 ```http
@@ -136,19 +140,22 @@ Form fields:
 **Response:**
 ```json
 {
-  "transcription": "текст распознанной речи",
+  "transcription": null,
   "response": "ответ AI модели",
-  "latency_ms": 4532,
-  "audio_tokens": 1250,
-  "cost_usd": 0.00075
+  "latency_ms": 1653,
+  "audio_tokens": 153,
+  "cost_usd": 0.000092
 }
 ```
 
 **Features:**
-- Russian language only (hardcoded)
-- Max duration: 60 seconds
-- Max file size: 10 MB
-- Audio conversion: .oga → .mp3 (ffmpeg)
+- **Model:** OpenRouter `openai/gpt-audio-mini` ($0.60/M input tokens)
+- **Audio Format:** Base64-encoded, sent via JSON API (not multipart)
+- **Language:** Russian (configurable via `language` parameter)
+- **Max duration:** 60 seconds
+- **Max file size:** 10 MB
+- **Audio conversion:** .oga/.wav → .mp3 via ffmpeg
+- **No separate transcription** - model directly generates response from audio
 - Full conversation history support
 - MCP tools disabled for voice (for stability)
 - FIFO queue per user (sequential processing)
@@ -156,8 +163,32 @@ Form fields:
 **Telegram Bot:**
 - Send voice message (up to 1 minute)
 - Bot shows "🎧 Слушаю..." indicator
-- Transcription displayed: "Вы сказали: ..."
-- AI response returned as text
+- AI response returned as text (no transcription display)
+
+**Technical Details:**
+1. Audio file converted to MP3 (if needed) using ffmpeg
+2. Audio encoded to base64
+3. Sent to OpenRouter in JSON format:
+   ```json
+   {
+     "model": "openai/gpt-audio-mini",
+     "modalities": ["text"],
+     "messages": [
+       {
+         "role": "user",
+         "content": [
+           {
+             "type": "input_audio",
+             "input_audio": {
+               "data": "base64_audio_here",
+               "format": "mp3"
+             }
+           }
+         ]
+       }
+     ]
+   }
+   ```
 
 ### GET /health
 
@@ -521,6 +552,67 @@ curl -X POST "https://your-server.railway.app/api/chat-voice" \
   -H "X-API-Key: YOUR_API_KEY" \
   -F "user_id=test_user" \
   -F "audio=@test_voice.mp3"
+```
+
+### Local Development
+
+For development and debugging, run the server locally instead of deploying to Railway.
+
+**See [LOCAL_SETUP.md](LOCAL_SETUP.md) for detailed instructions.**
+
+#### Quick Start
+
+**Terminal 1 - Backend Server:**
+```bash
+cd server
+source ../venv/bin/activate
+python main.py
+# Server runs on http://localhost:8000
+```
+
+**Terminal 2 - Telegram Bot:**
+```bash
+cd client
+# Edit .env: BACKEND_URL=http://localhost:8000
+source ../venv/bin/activate
+python main.py
+```
+
+#### Prerequisites for Local Run
+
+1. **ffmpeg** installed (for voice messages):
+   ```bash
+   brew install ffmpeg  # macOS
+   ```
+
+2. **Environment variables** configured in `server/.env`:
+   - `BACKEND_API_KEY`
+   - `OPENROUTER_API_KEY`
+   - `GITHUB_TOKEN`
+
+3. **Client configured** for local server in `client/.env`:
+   - `BACKEND_URL=http://localhost:8000`
+   - `BACKEND_API_KEY` (same as server)
+
+#### Advantages of Local Development
+
+- Instant feedback on code changes
+- No Railway deployment delays
+- Full access to logs and debugging
+- Works offline (except API calls)
+- Free (no Railway credits used)
+
+#### Common Local Commands
+
+```bash
+# Stop server
+lsof -ti:8000 | xargs kill -9
+
+# Check server status
+curl http://localhost:8000/health
+
+# View server processes
+ps aux | grep "python main.py"
 ```
 
 ## Troubleshooting

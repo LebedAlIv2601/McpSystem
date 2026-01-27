@@ -1,5 +1,6 @@
 """OpenRouter API client integration."""
 
+import base64
 import json
 import logging
 from typing import List, Dict, Any, Optional, Tuple
@@ -172,38 +173,49 @@ class OpenRouterClient:
             Tuple of (transcription, response_text, audio_tokens_used)
         """
         headers = {
-            "Authorization": f"Bearer {self.api_key}"
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
         }
 
-        # Build multipart form data
-        # According to OpenAI API spec for audio models:
-        # - messages: JSON-encoded conversation history
-        # - file: audio file
-        # - language: transcription language
-
         try:
-            # Read file content first (before async operations)
+            # Read and encode audio file to base64
             with open(audio_file_path, "rb") as audio_file:
-                audio_content = audio_file.read()
+                audio_bytes = audio_file.read()
+                audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
 
-            files = {
-                "file": ("audio.mp3", audio_content, "audio/mpeg")
+            # Determine audio format from file extension
+            audio_format = "mp3"  # Default to mp3 after ffmpeg conversion
+
+            # Build message with audio input (OpenRouter/OpenAI format)
+            user_message = {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": audio_base64,
+                            "format": audio_format
+                        }
+                    }
+                ]
             }
 
-            data = {
-                "model": "openai/gpt-audio-mini",  # Specific audio model
-                "messages": json.dumps(messages),
-                "language": language
+            # Combine with history
+            all_messages = messages + [user_message]
+
+            payload = {
+                "model": "openai/gpt-audio-mini",
+                "messages": all_messages,
+                "modalities": ["text"]  # We only want text output
             }
 
-            logger.info(f"OpenRouter audio request: model=gpt-audio-mini, messages={len(messages)}, language={language}")
+            logger.info(f"OpenRouter audio request: model=gpt-audio-mini, messages={len(all_messages)}, audio_size={len(audio_bytes)} bytes")
 
             async with httpx.AsyncClient(timeout=90.0) as client:
                 response = await client.post(
                     self.api_url,
                     headers=headers,
-                    files=files,
-                    data=data
+                    json=payload
                 )
                 response.raise_for_status()
                 result = response.json()
@@ -217,18 +229,20 @@ class OpenRouterClient:
             choice = result["choices"][0]
             message = choice.get("message", {})
 
-            # Extract transcription and response
-            # Format depends on OpenRouter's implementation of gpt-audio-mini
-            transcription = message.get("transcription") or message.get("content")
-            response_text = message.get("content")
+            # Response text from the model
+            response_text = message.get("content", "")
+
+            # gpt-audio-mini does NOT return separate transcription
+            # It directly processes audio and generates a response
+            # Return None for transcription to indicate it's not available
+            transcription = None
 
             # Extract usage
             usage = result.get("usage", {})
-            audio_tokens = usage.get("audio_tokens", 0) or usage.get("prompt_tokens", 0)
+            audio_tokens = usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0)
 
             logger.info(
-                f"Audio completion: transcription_len={len(transcription) if transcription else 0}, "
-                f"response_len={len(response_text) if response_text else 0}, tokens={audio_tokens}"
+                f"Audio completion: response_len={len(response_text) if response_text else 0}, tokens={audio_tokens}"
             )
 
             return transcription, response_text, audio_tokens

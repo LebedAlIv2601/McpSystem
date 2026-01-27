@@ -5,11 +5,14 @@ AI-powered system for consulting on the EasyPomodoro Android project using MCP (
 ## Project Overview
 
 This system provides:
-1. **Telegram Bot** - Interactive chat for project questions
+1. **Telegram Bot** - Interactive chat for project questions (text + voice)
 2. **REST API** - Backend with MCP integration for AI-powered responses
 3. **PR Code Review** - Automated pull request reviews via API
-4. Browse and analyze project code via GitHub Copilot MCP
-5. Search project documentation using RAG (Retrieval Augmented Generation)
+4. **Voice Input** - Send voice messages via Telegram (Russian, gpt-audio-mini)
+5. **User Personalization** - Customizable user profiles for tailored responses
+6. **Local Development** - Run server locally for debugging
+7. Browse and analyze project code via GitHub Copilot MCP
+8. Search project documentation using RAG (Retrieval Augmented Generation)
 
 ## Architecture
 
@@ -33,15 +36,19 @@ This system provides:
 │                      FastAPI + MCP                           │
 │                                                              │
 │  Endpoints:                                                  │
-│  ├─ POST /api/chat      - General chat with AI              │
-│  ├─ POST /api/review-pr - AI code review for PRs            │
-│  └─ GET  /health        - Health check                       │
+│  ├─ POST /api/chat         - General chat with AI           │
+│  ├─ POST /api/chat-voice   - Voice input (gpt-audio-mini)   │
+│  ├─ POST /api/review-pr    - AI code review for PRs         │
+│  ├─ GET  /api/profile/:id  - Get user profile               │
+│  └─ GET  /health           - Health check                    │
 │                                                              │
 │  Components:                                                 │
-│  ├─ chat_service.py     - Message processing + tool loops   │
-│  ├─ mcp_manager.py      - MCP server connections            │
-│  ├─ openrouter_client.py - LLM API integration              │
-│  └─ prompts.py          - System prompts (PR review, etc)   │
+│  ├─ chat_service.py      - Message processing + tool loops  │
+│  ├─ audio_service.py     - Voice message processing         │
+│  ├─ mcp_manager.py       - MCP server connections           │
+│  ├─ openrouter_client.py - LLM API + audio models           │
+│  ├─ profile_manager.py   - User personalization             │
+│  └─ prompts.py           - System prompts                    │
 └─────────────────────────┬───────────────────────────────────┘
                           │
           ┌───────────────┴───────────────┐
@@ -116,6 +123,38 @@ AI-powered code review for pull requests.
 - File-by-file findings with line numbers
 - Verdict: APPROVE / REQUEST_CHANGES / COMMENT
 
+### POST /api/chat-voice
+
+Process voice messages with gpt-audio-mini.
+
+**Request:**
+```http
+POST /api/chat-voice
+Content-Type: multipart/form-data
+
+user_id: string
+audio: file (.oga, .mp3, .wav)
+```
+
+**Response:**
+```json
+{
+  "transcription": null,
+  "response": "AI model response",
+  "latency_ms": 1653,
+  "audio_tokens": 153,
+  "cost_usd": 0.000092
+}
+```
+
+**Features:**
+- Model: `openai/gpt-audio-mini` via OpenRouter
+- Language: Russian (configurable)
+- Max duration: 60 seconds
+- Max file size: 10 MB
+- Audio conversion via ffmpeg
+- No separate transcription (model directly processes audio)
+
 ### GET /health
 
 Health check endpoint.
@@ -180,15 +219,19 @@ jobs:
 - `main.py` - FastAPI application entry point
 - `app.py` - API routes and endpoints
 - `chat_service.py` - Message processing with MCP tool integration
+- `audio_service.py` - Voice message processing
 - `mcp_manager.py` - MCP server connection management
 - `mcp_http_transport.py` - HTTP transport for GitHub Copilot MCP
-- `openrouter_client.py` - OpenRouter LLM API integration
+- `openrouter_client.py` - OpenRouter LLM + audio API integration
 - `prompts.py` - System prompts for different tasks
 - `schemas.py` - Pydantic models for API
 - `conversation.py` - Per-user conversation history
+- `profile_manager.py` - User profile management
+- `profile_storage.py` - JSON storage for profiles
 - `auth.py` - API key authentication
 - `config.py` - Configuration and environment variables
 - `logger.py` - Logging configuration
+- `Dockerfile` - Docker configuration with ffmpeg
 
 ### 2. Telegram Bot Client (client/)
 
@@ -236,10 +279,11 @@ jobs:
 ## Installation
 
 ### Prerequisites
-- Python 3.14+
+- Python 3.12+ (recommended 3.14)
 - OpenRouter API key
 - GitHub Personal Access Token
 - Telegram bot token (for client)
+- ffmpeg (for voice message processing)
 
 ### Server Setup
 
@@ -332,32 +376,80 @@ Create a Classic PAT with these scopes:
 
 ## Deployment
 
-### Railway
+### Local Development (Recommended for Testing)
+
+**For detailed instructions, see [LOCAL_SETUP.md](LOCAL_SETUP.md)**
+
+Quick start:
+
+```bash
+# Terminal 1: Backend Server
+cd server
+source ../venv/bin/activate
+python main.py
+
+# Terminal 2: Telegram Bot
+cd client
+source ../venv/bin/activate
+python main.py
+```
+
+**Prerequisites for local run:**
+- ffmpeg installed: `brew install ffmpeg` (macOS)
+- Environment variables configured in `server/.env`
+- Client configured for local server in `client/.env`:
+  - `BACKEND_URL=http://localhost:8000`
+
+**Advantages:**
+- Instant feedback on code changes
+- Full access to logs and debugging
+- No cloud deployment delays
+- Works offline (except API calls)
+
+### Railway Deployment
 
 The server is designed for Railway deployment:
 
 1. Connect repository to Railway
 2. Set environment variables in Railway dashboard
-3. Deploy automatically on push
+3. Set Root Directory to `server`
+4. Deploy automatically on push
+
+**Required Railway variables:**
+- `BACKEND_API_KEY`
+- `OPENROUTER_API_KEY`
+- `GITHUB_TOKEN`
+
+**Note:** Dockerfile includes ffmpeg for voice processing.
 
 ### Manual Testing
 
 ```bash
-# Health check
+# Local server
+curl http://localhost:8000/health
+
+# Railway server
 curl https://your-server.railway.app/health
 
 # Chat
-curl -X POST "https://your-server.railway.app/api/chat" \
+curl -X POST "http://localhost:8000/api/chat" \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"user_id": "test", "message": "What is the project structure?"}'
 
 # PR Review
-curl -X POST "https://your-server.railway.app/api/review-pr" \
+curl -X POST "http://localhost:8000/api/review-pr" \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"pr_number": 1}'
 ```
+
+## Documentation
+
+- **[LOCAL_SETUP.md](LOCAL_SETUP.md)** - Detailed local development guide
+- **[CLAUDE.md](CLAUDE.md)** - Complete technical documentation
+- **[DEPLOY.md](DEPLOY.md)** - Railway deployment instructions
+- **[PERSONALIZATION.md](PERSONALIZATION.md)** - User profile customization
 
 ## Troubleshooting
 
@@ -374,6 +466,18 @@ curl -X POST "https://your-server.railway.app/api/review-pr" \
 ### High latency
 - PR review may take 30-60 seconds due to multiple tool calls
 - Check OpenRouter rate limits
+
+### Voice input errors
+- **ffmpeg not found:** Install ffmpeg: `brew install ffmpeg`
+- **Audio conversion failed:** Check ffmpeg installation and logs
+- **Invalid API key:** Sync `BACKEND_API_KEY` in server/.env and client/.env
+- **OpenRouter 500 error:** Check audio format and model availability
+
+### Port already in use (local)
+```bash
+# Kill process on port 8000
+lsof -ti:8000 | xargs kill -9
+```
 
 ## License
 

@@ -1,5 +1,6 @@
 """HTTP client for backend API communication."""
 
+import io
 import logging
 from typing import Optional, Tuple
 import httpx
@@ -214,8 +215,10 @@ class BackendClient:
         url = f"{self.backend_url}/api/chat-voice"
 
         # Prepare multipart form data
+        # Wrap bytes in BytesIO to create file-like object
+        audio_file = io.BytesIO(audio_bytes)
         files = {
-            "audio": (f"voice.{audio_format}", audio_bytes, f"audio/{audio_format}")
+            "audio": (f"voice.{audio_format}", audio_file, f"audio/{audio_format}")
         }
         data = {
             "user_id": user_id

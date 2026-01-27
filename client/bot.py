@@ -296,6 +296,7 @@ class TelegramBot:
             thinking_msg = None
 
             # Send transcription (separate message, not saved to history)
+            # Note: gpt-audio-mini doesn't return transcription separately
             if transcription:
                 await retry_telegram_call(
                     update.message.reply_text,
