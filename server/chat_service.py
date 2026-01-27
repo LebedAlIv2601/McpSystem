@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """Service for handling chat requests with MCP tool integration."""
 
-    def __init__(self, mcp_manager: MCPManager):
+    def __init__(self, mcp_manager: Optional[MCPManager]):
         self.mcp_manager = mcp_manager
         self.conversation_manager = ConversationManager()
         self.openrouter_client = OpenRouterClient()
@@ -26,6 +26,10 @@ class ChatService:
 
     def initialize(self) -> None:
         """Initialize service with MCP tools."""
+        if self.mcp_manager is None:
+            logger.warning("Chat service initialized WITHOUT MCP tools (mcp_manager is None)")
+            return
+
         mcp_tools = self.mcp_manager.get_tools()
 
         # Log all available tools from MCP

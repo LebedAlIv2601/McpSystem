@@ -32,34 +32,58 @@ async def lifespan(app: FastAPI):
     global mcp_manager, mcp_context, chat_service
 
     logger.info("=== MCP Backend Server Starting ===")
+    logger.info("Step 1/4: Initializing MCP Manager...")
 
     try:
-        # Initialize MCP Manager
+        # Initialize MCP Manager with timeout
         mcp_manager = MCPManager()
+        logger.info("Step 2/4: MCP Manager created, connecting to servers...")
 
-        # Connect to MCP servers
-        logger.info("Connecting to MCP servers...")
-        mcp_context = mcp_manager.connect()
-        await mcp_context.__aenter__()
+        # Connect to MCP servers with timeout
+        try:
+            # Add timeout for MCP connection
+            mcp_context = mcp_manager.connect()
+            await asyncio.wait_for(
+                mcp_context.__aenter__(),
+                timeout=30.0  # 30 second timeout
+            )
+            logger.info("Step 3/4: MCP servers connected successfully")
 
-        # Initialize Chat Service
-        chat_service = ChatService(mcp_manager)
-        chat_service.initialize()
+            # Initialize Chat Service
+            chat_service = ChatService(mcp_manager)
+            chat_service.initialize()
 
-        # Set global chat service for router
-        set_chat_service(chat_service)
+            # Set global chat service for router
+            set_chat_service(chat_service)
+            logger.info(f"Step 3/4: Chat service initialized with {chat_service.get_tools_count()} tools")
+
+        except asyncio.TimeoutError:
+            logger.error("Step 3/4: MCP connection timeout after 30s - continuing without MCP tools")
+            # Create minimal chat service without MCP
+            chat_service = ChatService(None)
+            chat_service.initialize()
+            set_chat_service(chat_service)
+        except Exception as mcp_error:
+            logger.error(f"Step 3/4: MCP initialization failed: {mcp_error}", exc_info=True)
+            logger.warning("Step 3/4: Server will run without MCP tools")
+            # Create minimal chat service without MCP
+            chat_service = ChatService(None)
+            chat_service.initialize()
+            set_chat_service(chat_service)
 
         # Initialize Audio Service
+        logger.info("Step 4/4: Initializing Audio Service...")
         try:
             audio_service = AudioService()
             set_audio_service(audio_service)
-            logger.info("Audio service initialized successfully")
+            logger.info("Step 4/4: Audio service initialized successfully")
         except Exception as audio_error:
-            logger.error(f"Failed to initialize Audio Service: {audio_error}", exc_info=True)
-            logger.warning("Server will run without voice input support")
+            logger.error(f"Step 4/4: Failed to initialize Audio Service: {audio_error}", exc_info=True)
+            logger.warning("Step 4/4: Server will run without voice input support")
 
         logger.info("=== MCP Backend Server Ready ===")
-        logger.info(f"Tools available: {chat_service.get_tools_count()}")
+        logger.info("✓ All services initialized, server is now accepting requests")
+        logger.info(f"✓ Available endpoints: /api/chat, /api/chat-voice, /api/review-pr, /health")
 
         yield
 
