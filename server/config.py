@@ -12,16 +12,24 @@ load_dotenv(dotenv_path=env_path)
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 if not BACKEND_API_KEY:
     import sys
-    print("ERROR: BACKEND_API_KEY not found in environment variables!", file=sys.stderr)
-    print("Please set BACKEND_API_KEY in Railway environment variables", file=sys.stderr)
+    print("=" * 80, flush=True)
+    print("FATAL ERROR: Missing Environment Variables", flush=True)
+    print("=" * 80, flush=True)
+    print("ERROR: BACKEND_API_KEY not found in environment variables!", file=sys.stderr, flush=True)
+    print("Please set BACKEND_API_KEY in Railway environment variables", file=sys.stderr, flush=True)
+    print("=" * 80, flush=True)
     sys.exit(1)
 
 # OpenRouter Configuration
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 if not OPENROUTER_API_KEY:
     import sys
-    print("ERROR: OPENROUTER_API_KEY not found in environment variables!", file=sys.stderr)
-    print("Please set OPENROUTER_API_KEY in Railway environment variables", file=sys.stderr)
+    print("=" * 80, flush=True)
+    print("FATAL ERROR: Missing Environment Variables", flush=True)
+    print("=" * 80, flush=True)
+    print("ERROR: OPENROUTER_API_KEY not found in environment variables!", file=sys.stderr, flush=True)
+    print("Please set OPENROUTER_API_KEY in Railway environment variables", file=sys.stderr, flush=True)
+    print("=" * 80, flush=True)
     sys.exit(1)
 
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v3.2")

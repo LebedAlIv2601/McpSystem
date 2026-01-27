@@ -1,28 +1,46 @@
 """Main entry point for FastAPI backend server."""
 
-# Print immediately to verify container started
-print("=" * 60, flush=True)
-print("STARTING MCP BACKEND SERVER...", flush=True)
-print("=" * 60, flush=True)
+import sys
+
+# Print immediately to verify container started (BEFORE any imports)
+print("=" * 80, flush=True)
+print("=== MCP BACKEND SERVER STARTING ===", flush=True)
+print("=" * 80, flush=True)
+print("Python version:", sys.version, flush=True)
+print("Starting imports...", flush=True)
+sys.stdout.flush()
+sys.stderr.flush()
 
 import asyncio
 import logging
 import signal
-import sys
 from contextlib import asynccontextmanager
+
+print("Step 1/5: Core imports OK", flush=True)
 
 from fastapi import FastAPI
 import uvicorn
 
-print("Imports successful, initializing logger...", flush=True)
+print("Step 2/5: FastAPI imports OK", flush=True)
 
-from logger import setup_logging
-from mcp_manager import MCPManager
-from chat_service import ChatService
-from audio_service import AudioService, set_audio_service
-from app import router, set_chat_service
+# Now import our modules (these will trigger config.py)
+print("Step 3/5: Importing application modules (config will be checked)...", flush=True)
+
+try:
+    from logger import setup_logging
+    from mcp_manager import MCPManager
+    from chat_service import ChatService
+    from audio_service import AudioService, set_audio_service
+    from app import router, set_chat_service
+    print("Step 4/5: Application modules imported successfully", flush=True)
+except Exception as e:
+    print(f"FATAL: Failed to import application modules: {e}", file=sys.stderr, flush=True)
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 
 logger = logging.getLogger(__name__)
+print("Step 5/5: Logger initialized", flush=True)
 
 # Global state
 mcp_manager: MCPManager = None
