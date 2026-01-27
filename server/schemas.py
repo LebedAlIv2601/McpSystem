@@ -59,3 +59,13 @@ class ProfileResponse(BaseModel):
 
     message: str = Field(..., description="Success message")
     profile: Optional[dict] = Field(None, description="User profile data")
+
+
+class VoiceResponse(BaseModel):
+    """Response model for voice endpoint."""
+
+    transcription: str = Field(..., description="Recognized text from audio")
+    response: str = Field(..., description="AI assistant response")
+    latency_ms: int = Field(..., description="Processing time in milliseconds")
+    audio_tokens: int = Field(default=0, description="Audio tokens consumed")
+    cost_usd: float = Field(default=0.0, description="Estimated cost in USD")

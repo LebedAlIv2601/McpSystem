@@ -5,11 +5,12 @@ AI-powered system for consulting on the EasyPomodoro Android project using MCP (
 ## Project Overview
 
 This system provides:
-1. **Telegram Bot** - Interactive chat for project questions
+1. **Telegram Bot** - Interactive chat for project questions (text + voice)
 2. **REST API** - Backend with MCP integration for AI-powered responses
 3. **PR Code Review** - Automated pull request reviews via API
-4. Browse and analyze project code via GitHub Copilot MCP
-5. Search project documentation using RAG (Retrieval Augmented Generation)
+4. **Voice Input** - Send voice messages via Telegram (Russian language)
+5. Browse and analyze project code via GitHub Copilot MCP
+6. Search project documentation using RAG (Retrieval Augmented Generation)
 
 ## Architecture
 
@@ -33,15 +34,17 @@ This system provides:
 │                      FastAPI + MCP                           │
 │                                                              │
 │  Endpoints:                                                  │
-│  ├─ POST /api/chat      - General chat with AI              │
-│  ├─ POST /api/review-pr - AI code review for PRs            │
-│  └─ GET  /health        - Health check                       │
+│  ├─ POST /api/chat       - General chat with AI             │
+│  ├─ POST /api/chat-voice - Voice input (STT + AI response)  │
+│  ├─ POST /api/review-pr  - AI code review for PRs           │
+│  └─ GET  /health         - Health check                      │
 │                                                              │
 │  Components:                                                 │
-│  ├─ chat_service.py     - Message processing + tool loops   │
-│  ├─ mcp_manager.py      - MCP server connections            │
+│  ├─ chat_service.py      - Message processing + tool loops  │
+│  ├─ audio_service.py     - Voice message processing         │
+│  ├─ mcp_manager.py       - MCP server connections           │
 │  ├─ openrouter_client.py - LLM API integration              │
-│  └─ prompts.py          - System prompts (PR review, etc)   │
+│  └─ prompts.py           - System prompts (PR review, etc)  │
 └─────────────────────────┬───────────────────────────────────┘
                           │
           ┌───────────────┴───────────────┐
@@ -115,6 +118,46 @@ AI-powered code review for pull requests.
 - Performance considerations
 - File-by-file findings with line numbers
 - Verdict: APPROVE / REQUEST_CHANGES / COMMENT
+
+### POST /api/chat-voice
+
+Process voice messages with speech-to-text and AI response.
+
+**Request:**
+```http
+POST /api/chat-voice
+Content-Type: multipart/form-data
+
+Form fields:
+- user_id: string (required)
+- audio: file (.oga, .mp3, .wav) (required)
+```
+
+**Response:**
+```json
+{
+  "transcription": "текст распознанной речи",
+  "response": "ответ AI модели",
+  "latency_ms": 4532,
+  "audio_tokens": 1250,
+  "cost_usd": 0.00075
+}
+```
+
+**Features:**
+- Russian language only (hardcoded)
+- Max duration: 60 seconds
+- Max file size: 10 MB
+- Audio conversion: .oga → .mp3 (ffmpeg)
+- Full conversation history support
+- MCP tools disabled for voice (for stability)
+- FIFO queue per user (sequential processing)
+
+**Telegram Bot:**
+- Send voice message (up to 1 minute)
+- Bot shows "🎧 Слушаю..." indicator
+- Transcription displayed: "Вы сказали: ..."
+- AI response returned as text
 
 ### GET /health
 
@@ -288,6 +331,7 @@ jobs:
 - `main.py` - FastAPI application entry point
 - `app.py` - API routes and endpoints
 - `chat_service.py` - Message processing with MCP tool integration
+- `audio_service.py` - Voice message processing (STT + AI response)
 - `mcp_manager.py` - MCP server connection management
 - `mcp_http_transport.py` - HTTP transport for GitHub Copilot MCP
 - `openrouter_client.py` - OpenRouter LLM API integration
@@ -302,6 +346,7 @@ jobs:
 - `profile_manager.py` - Profile management and context generation
 - `data/user_profiles.json` - User profile storage
 - `data/profile_example.json` - Example profile template
+- `Dockerfile` - Docker configuration (includes ffmpeg)
 
 ### 2. Telegram Bot Client (client/)
 
@@ -470,6 +515,12 @@ curl -X POST "https://your-server.railway.app/api/review-pr" \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"pr_number": 1}'
+
+# Voice Input
+curl -X POST "https://your-server.railway.app/api/chat-voice" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -F "user_id=test_user" \
+  -F "audio=@test_voice.mp3"
 ```
 
 ## Troubleshooting
@@ -487,6 +538,31 @@ curl -X POST "https://your-server.railway.app/api/review-pr" \
 ### High latency
 - PR review may take 30-60 seconds due to multiple tool calls
 - Check OpenRouter rate limits
+
+### Voice input errors
+
+**"Audio conversion failed" error:**
+- Verify ffmpeg is installed on server: `ffmpeg -version`
+- Railway should have ffmpeg via Dockerfile
+- Check server logs for ffmpeg stderr output
+
+**"Audio file exceeds 10MB limit":**
+- Voice message is too large
+- Max file size: 10 MB
+- Max duration: 60 seconds
+- Ask user to send shorter voice message
+
+**Empty transcription:**
+- Audio quality may be too low
+- Background noise may be excessive
+- Try sending voice in quieter environment
+- Fallback: use text input
+
+**High voice processing latency (>15s):**
+- Expected: 7-15 seconds for quality transcription
+- Quality prioritized over speed (design decision)
+- OpenRouter API latency may vary
+- Check logs for detailed timing breakdown
 
 ## License
 

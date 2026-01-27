@@ -94,3 +94,7 @@ ESSENTIAL_TOOLS = [
 
 # Response indicator
 MCP_USED_INDICATOR = "\n\n✓ MCP was used"
+
+# Voice input settings
+VOICE_MAX_DURATION_SEC = 60  # 1 minute
+VOICE_MAX_FILE_SIZE_MB = 10

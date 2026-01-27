@@ -259,6 +259,70 @@ class TelegramBot:
             except Exception:
                 logger.error(f"User {user_id}: Failed to send error message")
 
+    async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle voice messages from users."""
+        user_id = update.effective_user.id
+        voice = update.message.voice
+
+        logger.info(f"User {user_id}: Received voice message (duration={voice.duration}s, size={voice.file_size}B)")
+
+        # Validate duration (max 1 minute)
+        if voice.duration > 60:
+            await retry_telegram_call(
+                update.message.reply_text,
+                "❌ Голосовое сообщение слишком длинное. Максимум 1 минута."
+            )
+            return
+
+        thinking_msg = None
+
+        try:
+            # Show processing indicator
+            thinking_msg = await retry_telegram_call(update.message.reply_text, "🎧 Слушаю...")
+
+            # Download voice file
+            voice_file = await voice.get_file()
+            voice_bytes = await voice_file.download_as_bytearray()
+
+            # Send to backend
+            transcription, response_text = await self.backend_client.send_voice_message(
+                user_id=str(user_id),
+                audio_bytes=voice_bytes,
+                audio_format="oga"  # Telegram voice messages are .oga
+            )
+
+            # Delete thinking message
+            await retry_telegram_call(thinking_msg.delete)
+            thinking_msg = None
+
+            # Send transcription (separate message, not saved to history)
+            if transcription:
+                await retry_telegram_call(
+                    update.message.reply_text,
+                    f"Вы сказали: {transcription}"
+                )
+
+            # Send AI response
+            if response_text:
+                await retry_telegram_call(update.message.reply_text, response_text)
+            else:
+                await retry_telegram_call(update.message.reply_text, ERROR_MESSAGE)
+
+        except Exception as e:
+            logger.error(f"User {user_id}: Error handling voice message: {e}", exc_info=True)
+            if thinking_msg:
+                try:
+                    await retry_telegram_call(thinking_msg.delete)
+                except Exception:
+                    pass
+            try:
+                await retry_telegram_call(
+                    update.message.reply_text,
+                    "❌ Не удалось обработать голосовое сообщение. Попробуйте ещё раз или напишите текстом."
+                )
+            except Exception:
+                logger.error(f"User {user_id}: Failed to send error message")
+
     async def _handle_profile_update(self, update: Update, user_id: int, message: str) -> None:
         """Handle profile update from JSON message."""
         try:
@@ -297,6 +361,9 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("edit_profile", self.edit_profile_command))
         self.application.add_handler(CommandHandler("profile_example", self.profile_example_command))
         self.application.add_handler(CommandHandler("delete_profile", self.delete_profile_command))
+
+        # Register voice handler
+        self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
 
         # Register message handler (must be last)
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))

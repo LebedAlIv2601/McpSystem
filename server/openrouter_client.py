@@ -153,3 +153,88 @@ class OpenRouterClient:
         except Exception as e:
             logger.error(f"OpenRouter error: {e}", exc_info=True)
             raise
+
+    async def audio_completion(
+        self,
+        messages: List[Dict[str, str]],
+        audio_file_path: str,
+        language: str = "ru"
+    ) -> Tuple[Optional[str], Optional[str], int]:
+        """
+        Send audio completion request to OpenRouter (gpt-audio-mini).
+
+        Args:
+            messages: Conversation history (text only)
+            audio_file_path: Path to audio file (.mp3)
+            language: Language code for transcription
+
+        Returns:
+            Tuple of (transcription, response_text, audio_tokens_used)
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+        # Build multipart form data
+        # According to OpenAI API spec for audio models:
+        # - messages: JSON-encoded conversation history
+        # - file: audio file
+        # - language: transcription language
+
+        try:
+            with open(audio_file_path, "rb") as audio_file:
+                files = {
+                    "file": ("audio.mp3", audio_file, "audio/mpeg")
+                }
+
+                data = {
+                    "model": "openai/gpt-audio-mini",  # Specific audio model
+                    "messages": json.dumps(messages),
+                    "language": language
+                }
+
+                logger.info(f"OpenRouter audio request: model=gpt-audio-mini, messages={len(messages)}, language={language}")
+
+                async with httpx.AsyncClient(timeout=90.0) as client:
+                    response = await client.post(
+                        self.api_url,
+                        headers=headers,
+                        files=files,
+                        data=data
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+
+            logger.debug(f"OpenRouter audio response: {json.dumps(result, indent=2)}")
+
+            if "choices" not in result or not result["choices"]:
+                logger.error("Invalid OpenRouter audio response: no choices")
+                return None, None, 0
+
+            choice = result["choices"][0]
+            message = choice.get("message", {})
+
+            # Extract transcription and response
+            # Format depends on OpenRouter's implementation of gpt-audio-mini
+            transcription = message.get("transcription") or message.get("content")
+            response_text = message.get("content")
+
+            # Extract usage
+            usage = result.get("usage", {})
+            audio_tokens = usage.get("audio_tokens", 0) or usage.get("prompt_tokens", 0)
+
+            logger.info(
+                f"Audio completion: transcription_len={len(transcription) if transcription else 0}, "
+                f"response_len={len(response_text) if response_text else 0}, tokens={audio_tokens}"
+            )
+
+            return transcription, response_text, audio_tokens
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"OpenRouter audio HTTP error: {e}")
+            logger.error(f"Response body: {e.response.text}")
+            raise
+
+        except Exception as e:
+            logger.error(f"OpenRouter audio error: {e}", exc_info=True)
+            raise

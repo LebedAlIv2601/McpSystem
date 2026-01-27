@@ -193,3 +193,62 @@ class BackendClient:
         except Exception as e:
             logger.error(f"Delete profile error: {e}")
             return False
+
+    async def send_voice_message(
+        self,
+        user_id: str,
+        audio_bytes: bytes,
+        audio_format: str = "oga"
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Send voice message to backend for processing.
+
+        Args:
+            user_id: User identifier
+            audio_bytes: Audio file bytes
+            audio_format: Audio format (oga, mp3, wav)
+
+        Returns:
+            Tuple of (transcription, response_text)
+        """
+        url = f"{self.backend_url}/api/chat-voice"
+
+        # Prepare multipart form data
+        files = {
+            "audio": (f"voice.{audio_format}", audio_bytes, f"audio/{audio_format}")
+        }
+        data = {
+            "user_id": user_id
+        }
+
+        logger.info(f"Sending voice message to backend: user={user_id}, size={len(audio_bytes)} bytes")
+
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(
+                    url,
+                    headers={"X-API-Key": self.api_key},
+                    files=files,
+                    data=data
+                )
+                response.raise_for_status()
+                result = response.json()
+
+            transcription = result.get("transcription")
+            response_text = result.get("response")
+            latency_ms = result.get("latency_ms", 0)
+            audio_tokens = result.get("audio_tokens", 0)
+            cost_usd = result.get("cost_usd", 0.0)
+
+            logger.info(
+                f"Voice message processed: latency={latency_ms}ms, tokens={audio_tokens}, cost=${cost_usd:.6f}"
+            )
+
+            return transcription, response_text
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Backend error: {e.response.status_code} - {e.response.text}")
+            return None, None
+        except Exception as e:
+            logger.error(f"Voice message error: {e}", exc_info=True)
+            return None, None

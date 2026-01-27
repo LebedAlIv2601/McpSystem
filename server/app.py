@@ -1,16 +1,18 @@
 """FastAPI router with chat endpoint."""
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, File, Form, UploadFile
 
 from auth import verify_api_key
 from schemas import (
     ChatRequest, ChatResponse, HealthResponse, ErrorResponse,
     ReviewPRRequest, ReviewPRResponse,
-    ProfileUpdateRequest, ProfileResponse
+    ProfileUpdateRequest, ProfileResponse,
+    VoiceResponse
 )
 from chat_service import ChatService
 from profile_manager import get_profile_manager
+from audio_service import get_audio_service, AudioService
 
 logger = logging.getLogger(__name__)
 
@@ -289,3 +291,69 @@ async def delete_profile(
     return ProfileResponse(
         message="Profile deleted successfully"
     )
+
+
+@router.post(
+    "/api/chat-voice",
+    response_model=VoiceResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid audio file"},
+        401: {"model": ErrorResponse, "description": "Invalid API key"},
+        500: {"model": ErrorResponse, "description": "Audio processing error"}
+    },
+    summary="Process voice message",
+    description="Convert voice to text and generate AI response with conversation history."
+)
+async def chat_voice(
+    user_id: str = Form(...),
+    audio: UploadFile = File(...),
+    api_key: str = Depends(verify_api_key),
+    audio_service: AudioService = Depends(get_audio_service)
+) -> VoiceResponse:
+    """
+    Process voice message and return transcription + AI response.
+
+    Args:
+        user_id: User identifier
+        audio: Audio file (.oga, .mp3, .wav)
+        api_key: Validated API key
+        audio_service: Audio service instance
+
+    Returns:
+        VoiceResponse with transcription and response
+    """
+    logger.info(f"Voice request from user {user_id}, file={audio.filename}, size={audio.size if audio.size else 'unknown'}")
+
+    # Validate file size (10MB limit)
+    if audio.size and audio.size > 10 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Audio file exceeds 10MB limit"
+        )
+
+    try:
+        # Read audio bytes
+        audio_bytes = await audio.read()
+
+        # Determine audio format from filename
+        audio_format = "oga"
+        if audio.filename:
+            ext = audio.filename.split('.')[-1].lower()
+            if ext in ["mp3", "wav", "oga", "ogg"]:
+                audio_format = ext
+
+        # Process voice message
+        result = await audio_service.process_voice_message(
+            user_id=user_id,
+            audio_bytes=audio_bytes,
+            audio_format=audio_format
+        )
+
+        return VoiceResponse(**result)
+
+    except Exception as e:
+        logger.error(f"Voice processing error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Audio processing failed: {str(e)}"
+        )

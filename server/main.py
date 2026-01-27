@@ -12,6 +12,7 @@ import uvicorn
 from logger import setup_logging
 from mcp_manager import MCPManager
 from chat_service import ChatService
+from audio_service import AudioService, set_audio_service
 from app import router, set_chat_service
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,11 @@ async def lifespan(app: FastAPI):
 
         # Set global chat service for router
         set_chat_service(chat_service)
+
+        # Initialize Audio Service
+        audio_service = AudioService()
+        set_audio_service(audio_service)
+        logger.info("Audio service initialized")
 
         logger.info("=== MCP Backend Server Ready ===")
         logger.info(f"Tools available: {chat_service.get_tools_count()}")
