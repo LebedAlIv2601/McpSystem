@@ -182,28 +182,31 @@ class OpenRouterClient:
         # - language: transcription language
 
         try:
+            # Read file content first (before async operations)
             with open(audio_file_path, "rb") as audio_file:
-                files = {
-                    "file": ("audio.mp3", audio_file, "audio/mpeg")
-                }
+                audio_content = audio_file.read()
 
-                data = {
-                    "model": "openai/gpt-audio-mini",  # Specific audio model
-                    "messages": json.dumps(messages),
-                    "language": language
-                }
+            files = {
+                "file": ("audio.mp3", audio_content, "audio/mpeg")
+            }
 
-                logger.info(f"OpenRouter audio request: model=gpt-audio-mini, messages={len(messages)}, language={language}")
+            data = {
+                "model": "openai/gpt-audio-mini",  # Specific audio model
+                "messages": json.dumps(messages),
+                "language": language
+            }
 
-                async with httpx.AsyncClient(timeout=90.0) as client:
-                    response = await client.post(
-                        self.api_url,
-                        headers=headers,
-                        files=files,
-                        data=data
-                    )
-                    response.raise_for_status()
-                    result = response.json()
+            logger.info(f"OpenRouter audio request: model=gpt-audio-mini, messages={len(messages)}, language={language}")
+
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(
+                    self.api_url,
+                    headers=headers,
+                    files=files,
+                    data=data
+                )
+                response.raise_for_status()
+                result = response.json()
 
             logger.debug(f"OpenRouter audio response: {json.dumps(result, indent=2)}")
 

@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Dict, Optional
 from collections import defaultdict
 
+from fastapi import HTTPException
+
 from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
 from profile_manager import get_profile_manager
@@ -21,11 +23,23 @@ class AudioService:
     """Service for processing voice messages with audio-to-text and AI response."""
 
     def __init__(self):
-        self.conversation_manager = ConversationManager()
-        self.openrouter_client = OpenRouterClient()
+        logger.info("Initializing AudioService...")
 
-        # Per-user locks for sequential processing (FIFO)
-        self.user_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        try:
+            self.conversation_manager = ConversationManager()
+            logger.info("ConversationManager initialized")
+
+            self.openrouter_client = OpenRouterClient()
+            logger.info("OpenRouterClient initialized")
+
+            # Per-user locks for sequential processing (FIFO)
+            self.user_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+            logger.info("User locks initialized")
+
+            logger.info("AudioService initialization complete")
+        except Exception as e:
+            logger.error(f"AudioService initialization failed: {e}", exc_info=True)
+            raise
 
     async def process_voice_message(
         self,
@@ -214,10 +228,13 @@ Respond in user's language (Russian)."""
 _audio_service: Optional[AudioService] = None
 
 
-def get_audio_service() -> AudioService:
+def get_audio_service() -> Optional[AudioService]:
     """Get audio service instance."""
     if _audio_service is None:
-        raise RuntimeError("Audio service not initialized")
+        raise HTTPException(
+            status_code=503,
+            detail="Voice input service not available"
+        )
     return _audio_service
 
 

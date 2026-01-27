@@ -50,9 +50,13 @@ async def lifespan(app: FastAPI):
         set_chat_service(chat_service)
 
         # Initialize Audio Service
-        audio_service = AudioService()
-        set_audio_service(audio_service)
-        logger.info("Audio service initialized")
+        try:
+            audio_service = AudioService()
+            set_audio_service(audio_service)
+            logger.info("Audio service initialized successfully")
+        except Exception as audio_error:
+            logger.error(f"Failed to initialize Audio Service: {audio_error}", exc_info=True)
+            logger.warning("Server will run without voice input support")
 
         logger.info("=== MCP Backend Server Ready ===")
         logger.info(f"Tools available: {chat_service.get_tools_count()}")
