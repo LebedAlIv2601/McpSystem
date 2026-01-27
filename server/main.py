@@ -1,5 +1,10 @@
 """Main entry point for FastAPI backend server."""
 
+# Print immediately to verify container started
+print("=" * 60, flush=True)
+print("STARTING MCP BACKEND SERVER...", flush=True)
+print("=" * 60, flush=True)
+
 import asyncio
 import logging
 import signal
@@ -8,6 +13,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 import uvicorn
+
+print("Imports successful, initializing logger...", flush=True)
 
 from logger import setup_logging
 from mcp_manager import MCPManager

@@ -11,12 +11,18 @@ load_dotenv(dotenv_path=env_path)
 # API Authentication
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 if not BACKEND_API_KEY:
-    raise ValueError("BACKEND_API_KEY not found in .env file")
+    import sys
+    print("ERROR: BACKEND_API_KEY not found in environment variables!", file=sys.stderr)
+    print("Please set BACKEND_API_KEY in Railway environment variables", file=sys.stderr)
+    sys.exit(1)
 
 # OpenRouter Configuration
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 if not OPENROUTER_API_KEY:
-    raise ValueError("OPENROUTER_API_KEY not found in .env file")
+    import sys
+    print("ERROR: OPENROUTER_API_KEY not found in environment variables!", file=sys.stderr)
+    print("Please set OPENROUTER_API_KEY in Railway environment variables", file=sys.stderr)
+    sys.exit(1)
 
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v3.2")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
