@@ -31,3 +31,5 @@ client/subscribers.json
 client/rag_state.json
 client/faiss_index.bin
 client/faiss_metadata.json
+server/data/user_profiles.json
+server/data/*.lock

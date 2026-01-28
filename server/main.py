@@ -101,7 +101,7 @@ async def lifespan(app: FastAPI):
         try:
             audio_service = AudioService()
             set_audio_service(audio_service)
-            logger.info("Step 4/4: Audio service initialized successfully")
+            logger.info("Step 4/4: Audio service initialized successfully (two-stage: audio→text)")
         except Exception as audio_error:
             logger.error(f"Step 4/4: Failed to initialize Audio Service: {audio_error}", exc_info=True)
             logger.warning("Step 4/4: Server will run without voice input support")

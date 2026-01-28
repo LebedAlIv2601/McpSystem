@@ -149,31 +149,40 @@ Form fields:
 ```
 
 **Features:**
-- **Model:** OpenRouter `openai/gpt-audio-mini` ($0.60/M input tokens)
+- **Two-Stage Processing:**
+  1. **Audio Model** (`openai/gpt-audio-mini`) - transcription/summary ($0.60/M input)
+  2. **Text Model** (`x-ai/grok-code-fast-1`) - response generation with MCP tools
 - **Audio Format:** Base64-encoded, sent via JSON API (not multipart)
 - **Language:** Russian (configurable via `language` parameter)
 - **Max duration:** 60 seconds
 - **Max file size:** 10 MB
 - **Audio conversion:** .oga/.wav → .mp3 via ffmpeg
-- **No separate transcription** - model directly generates response from audio
+- **Full MCP Tools Support** - text model has access to all MCP tools (RAG, GitHub, etc.)
 - Full conversation history support
-- MCP tools disabled for voice (for stability)
 - FIFO queue per user (sequential processing)
+- **Latency:** 10-30s (transcription + text processing with tools)
 
 **Telegram Bot:**
 - Send voice message (up to 1 minute)
 - Bot shows "🎧 Слушаю..." indicator
-- AI response returned as text (no transcription display)
+- Voice → transcription → text model with full MCP access
+- AI response returned as text (transcription visible in response)
 
-**Technical Details:**
+**Technical Details - Two-Stage Pipeline:**
+
+**Stage 1: Audio Transcription**
 1. Audio file converted to MP3 (if needed) using ffmpeg
 2. Audio encoded to base64
-3. Sent to OpenRouter in JSON format:
+3. Sent to `openai/gpt-audio-mini` for transcription:
    ```json
    {
      "model": "openai/gpt-audio-mini",
      "modalities": ["text"],
      "messages": [
+       {
+         "role": "system",
+         "content": "Transcribe and summarize the user's voice message"
+       },
        {
          "role": "user",
          "content": [
@@ -189,6 +198,18 @@ Form fields:
      ]
    }
    ```
+4. Returns transcribed/summarized text
+
+**Stage 2: Text Processing with MCP Tools**
+5. Transcription sent to text model (`x-ai/grok-code-fast-1`)
+6. Text model has full access to MCP tools (RAG, GitHub, file browsing, etc.)
+7. Tool call loop (up to 10 iterations) processes request
+8. Final response generated with all gathered context
+
+**Advantages:**
+- Audio model only for transcription (cheaper, faster)
+- Text model can use ALL MCP tools (not limited by audio API)
+- Better reliability (no dependency on audio+tools support)
 
 ### GET /health
 

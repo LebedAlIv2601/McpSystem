@@ -64,7 +64,7 @@ class ProfileResponse(BaseModel):
 class VoiceResponse(BaseModel):
     """Response model for voice endpoint."""
 
-    transcription: str = Field(..., description="Recognized text from audio")
+    transcription: Optional[str] = Field(default=None, description="Recognized text from audio (may be None for gpt-audio-mini)")
     response: str = Field(..., description="AI assistant response")
     latency_ms: int = Field(..., description="Processing time in milliseconds")
     audio_tokens: int = Field(default=0, description="Audio tokens consumed")

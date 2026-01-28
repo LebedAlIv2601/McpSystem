@@ -159,8 +159,10 @@ class OpenRouterClient:
         self,
         messages: List[Dict[str, str]],
         audio_file_path: str,
-        language: str = "ru"
-    ) -> Tuple[Optional[str], Optional[str], int]:
+        language: str = "ru",
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[str] = None
+    ) -> Tuple[Optional[str], Optional[str], int, Optional[List[Dict[str, Any]]]]:
         """
         Send audio completion request to OpenRouter (gpt-audio-mini).
 
@@ -168,9 +170,11 @@ class OpenRouterClient:
             messages: Conversation history (text only)
             audio_file_path: Path to audio file (.mp3)
             language: Language code for transcription
+            tools: Available tools in OpenRouter format
+            tool_choice: Tool selection strategy ("auto", "required", "none")
 
         Returns:
-            Tuple of (transcription, response_text, audio_tokens_used)
+            Tuple of (transcription, response_text, audio_tokens_used, tool_calls)
         """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -209,7 +213,13 @@ class OpenRouterClient:
                 "modalities": ["text"]  # We only want text output
             }
 
-            logger.info(f"OpenRouter audio request: model=gpt-audio-mini, messages={len(all_messages)}, audio_size={len(audio_bytes)} bytes")
+            if tools:
+                payload["tools"] = tools
+                if tool_choice:
+                    payload["tool_choice"] = tool_choice
+                    logger.info(f"Audio request: Using tool_choice: {tool_choice}")
+
+            logger.info(f"OpenRouter audio request: model=gpt-audio-mini, messages={len(all_messages)}, audio_size={len(audio_bytes)} bytes, tools={len(tools) if tools else 0}")
 
             async with httpx.AsyncClient(timeout=90.0) as client:
                 response = await client.post(
@@ -224,13 +234,29 @@ class OpenRouterClient:
 
             if "choices" not in result or not result["choices"]:
                 logger.error("Invalid OpenRouter audio response: no choices")
-                return None, None, 0
+                return None, None, 0, None
 
             choice = result["choices"][0]
             message = choice.get("message", {})
 
             # Response text from the model
             response_text = message.get("content", "")
+
+            # Parse tool calls (if present)
+            tool_calls = message.get("tool_calls")
+            parsed_tool_calls = None
+
+            if tool_calls:
+                logger.info(f"Audio model returned {len(tool_calls)} tool calls")
+                parsed_tool_calls = []
+                for tc in tool_calls:
+                    if tc.get("type") == "function":
+                        func = tc.get("function", {})
+                        parsed_tool_calls.append({
+                            "id": tc.get("id"),
+                            "name": func.get("name"),
+                            "arguments": json.loads(func.get("arguments", "{}"))
+                        })
 
             # gpt-audio-mini does NOT return separate transcription
             # It directly processes audio and generates a response
@@ -242,10 +268,10 @@ class OpenRouterClient:
             audio_tokens = usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0)
 
             logger.info(
-                f"Audio completion: response_len={len(response_text) if response_text else 0}, tokens={audio_tokens}"
+                f"Audio completion: response_len={len(response_text) if response_text else 0}, tokens={audio_tokens}, has_tool_calls={parsed_tool_calls is not None}"
             )
 
-            return transcription, response_text, audio_tokens
+            return transcription, response_text, audio_tokens, parsed_tool_calls
 
         except httpx.HTTPStatusError as e:
             logger.error(f"OpenRouter audio HTTP error: {e}")

@@ -1,6 +1,7 @@
 """Audio processing service for voice messages."""
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -15,14 +16,18 @@ from fastapi import HTTPException
 from conversation import ConversationManager
 from openrouter_client import OpenRouterClient
 from profile_manager import get_profile_manager
+from config import MCP_USED_INDICATOR
 
 logger = logging.getLogger(__name__)
 
 
 class AudioService:
-    """Service for processing voice messages with audio-to-text and AI response."""
+    """Service for processing voice messages with two-stage processing:
+    1. Audio model (gpt-audio-mini) - transcription/summary
+    2. Text model (via chat_service) - response generation with MCP tools
+    """
 
-    def __init__(self):
+    def __init__(self, mcp_manager=None):
         logger.info("Initializing AudioService...")
 
         try:
@@ -36,7 +41,7 @@ class AudioService:
             self.user_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
             logger.info("User locks initialized")
 
-            logger.info("AudioService initialization complete")
+            logger.info("AudioService initialization complete (two-stage processing: audio → text)")
         except Exception as e:
             logger.error(f"AudioService initialization failed: {e}", exc_info=True)
             raise
@@ -102,35 +107,55 @@ class AudioService:
                 conversation_history = conversation_history[-20:]
                 logger.info(f"User {user_id}: Truncated history to 20 messages")
 
-            # Step 5: Build system prompt (NO MCP tools)
-            system_prompt = self._build_system_prompt(user_id)
+            # Step 5: Get transcription from audio model (NO tools)
+            logger.info(f"User {user_id}: Step 1/2 - Audio transcription")
+            audio_prompt = self._build_audio_transcription_prompt()
 
-            # Step 6: Call OpenRouter with audio + history
-            transcription, response_text, audio_tokens = await self.openrouter_client.audio_completion(
-                messages=[system_prompt] + conversation_history,
+            _, audio_response, audio_tokens, _ = await self.openrouter_client.audio_completion(
+                messages=[audio_prompt] + conversation_history,
                 audio_file_path=audio_file_path,
-                language="ru"
+                language="ru",
+                tools=None,  # NO tools for audio model
+                tool_choice=None
             )
 
-            # Step 7: Save transcription to conversation history (NOT the display message)
-            if transcription:
-                self.conversation_manager.add_message(user_id, "user", transcription)
+            if not audio_response:
+                logger.error(f"User {user_id}: Audio transcription failed")
+                return {
+                    "transcription": None,
+                    "response": "Извините, не удалось распознать голосовое сообщение.",
+                    "latency_ms": int((time.time() - start_time) * 1000),
+                    "audio_tokens": audio_tokens,
+                    "cost_usd": self._calculate_cost(audio_tokens)
+                }
 
-            if response_text:
-                self.conversation_manager.add_message(user_id, "assistant", response_text)
+            logger.info(f"User {user_id}: Transcription (from audio model): {audio_response[:100]}...")
 
-            # Step 8: Calculate metrics
+            # Step 6: Process transcription with text model + MCP tools
+            logger.info(f"User {user_id}: Step 2/2 - Text processing with MCP tools")
+
+            # Import here to avoid circular dependency
+            from app import get_chat_service
+
+            chat_service = get_chat_service()
+            final_response, tool_calls_count, mcp_was_used = await chat_service.process_message(
+                user_id=user_id,
+                message=audio_response
+            )
+
+            # Step 7: Calculate metrics
             latency_ms = int((time.time() - start_time) * 1000)
             cost_usd = self._calculate_cost(audio_tokens)
 
             logger.info(
                 f"METRIC: voice_processing user_id={user_id} latency_ms={latency_ms} "
-                f"audio_tokens={audio_tokens} cost_usd={cost_usd:.6f} error=none"
+                f"audio_tokens={audio_tokens} cost_usd={cost_usd:.6f} tool_calls={tool_calls_count} "
+                f"mcp_used={mcp_was_used} error=none"
             )
 
             return {
-                "transcription": transcription or "",
-                "response": response_text or "Извините, не удалось обработать голосовое сообщение.",
+                "transcription": audio_response,  # What audio model understood
+                "response": final_response or "Извините, не удалось обработать голосовое сообщение.",
                 "latency_ms": latency_ms,
                 "audio_tokens": audio_tokens,
                 "cost_usd": cost_usd
@@ -190,31 +215,19 @@ class AudioService:
 
         logger.info(f"Audio converted successfully: {output_path}")
 
-    def _build_system_prompt(self, user_id: str) -> Dict:
-        """Build system prompt with user personalization (NO MCP tools)."""
-        from datetime import datetime
-        current_date = datetime.now().strftime("%Y-%m-%d")
-
-        base_content = f"""Current date: {current_date}.
-
-You are a project consultant for EasyPomodoro Android app (repo: LebedAlIv2601/EasyPomodoro).
-
-**IMPORTANT:** This is a voice input request. You DO NOT have access to code browsing tools.
-- Answer based on your general knowledge and the conversation history
-- Be concise and helpful
-- If you need specific code details, ask the user to send a text message instead
-
-Respond in user's language (Russian)."""
-
-        # Add personalization context if profile exists
-        profile_manager = get_profile_manager()
-        profile_context = profile_manager.build_context(user_id)
-        if profile_context:
-            base_content += "\n\n" + profile_context
-
+    def _build_audio_transcription_prompt(self) -> Dict:
+        """Build system prompt for audio transcription/summary."""
         return {
             "role": "system",
-            "content": base_content
+            "content": """You are a voice message transcription assistant.
+
+Your task is to:
+1. Listen to the user's voice message
+2. Transcribe it accurately
+3. Create a brief summary of the main question or request
+
+Respond ONLY with the transcribed text or a brief summary of what the user asked.
+Be concise and clear. Use Russian language."""
         }
 
     def _calculate_cost(self, audio_tokens: int) -> float:
